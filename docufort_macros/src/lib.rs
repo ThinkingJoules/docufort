@@ -944,45 +944,45 @@ pub fn make_system(input: TokenStream) -> TokenStream {
 
 }
 
-fn check_derive_attrs(attrs: &[Attribute],check:&str) -> bool {
-    for attr in attrs {
-        if attr.path().is_ident("derive") {
-            let nested = attr.parse_args_with(Punctuated::<Meta, Token![,]>::parse_terminated).unwrap();
-            for meta in nested {
-                match meta {
-                    Meta::Path(path) if path.is_ident(check) => {
-                        return true
-                    }
-                    _ => {
-                        continue
-                    }
-                }
-            }
-        }
-    }
-    false
-}
-fn has_data_field(fields: &Fields) -> std::result::Result<bool, ()> {
-    if let Fields::Named(named_fields) = fields {
-        let mut has_data = false;
+// fn check_derive_attrs(attrs: &[Attribute],check:&str) -> bool {
+//     for attr in attrs {
+//         if attr.path().is_ident("derive") {
+//             let nested = attr.parse_args_with(Punctuated::<Meta, Token![,]>::parse_terminated).unwrap();
+//             for meta in nested {
+//                 match meta {
+//                     Meta::Path(path) if path.is_ident(check) => {
+//                         return true
+//                     }
+//                     _ => {
+//                         continue
+//                     }
+//                 }
+//             }
+//         }
+//     }
+//     false
+// }
+// fn has_data_field(fields: &Fields) -> std::result::Result<bool, ()> {
+//     if let Fields::Named(named_fields) = fields {
+//         let mut has_data = false;
 
-        for (i, field) in named_fields.named.iter().enumerate() {
-            let ident = field.ident.as_ref().unwrap();
+//         for (i, field) in named_fields.named.iter().enumerate() {
+//             let ident = field.ident.as_ref().unwrap();
             
-            if ident == "data" {
-                has_data = true;
-            }
+//             if ident == "data" {
+//                 has_data = true;
+//             }
 
-            if has_data && i < named_fields.named.len() - 1 {
-                return Err(());
-            }
-        }
+//             if has_data && i < named_fields.named.len() - 1 {
+//                 return Err(());
+//             }
+//         }
 
-        return Ok(has_data);
-    }
+//         return Ok(has_data);
+//     }
 
-    Ok(false)
-}
+//     Ok(false)
+// }
 /// `MsgReadWrite` is a custom derive macro that generates a default implementation for the `DocuFortMsgCoding` trait methods.
 ///
 /// This macro enables struct-level control of error types associated with the methods `write_to` and `read_from`.

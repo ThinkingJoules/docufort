@@ -1,6 +1,7 @@
 
 
 pub use docufort_macros::*;
+pub use serde::*;
 
 pub const MAGIC_NUMBER: [u8; 8] = [0x64, 0x6F, 0x63, 0x75, 0x66, 0x6F, 0x72, 0x74];
 
@@ -154,7 +155,7 @@ impl DocuFortMsg for DfBlockEnd{
 /// // Now `level` can be used in the compression functions that require a compression level.
 /// ```
 #[derive(Copy, Clone, Debug, PartialOrd, Ord,PartialEq, Eq)]
-pub struct CompressionLevel(u8);
+pub struct CompressionLevel(pub u8);
 impl std::ops::Deref for CompressionLevel {
     type Target = u8;
 
@@ -320,15 +321,55 @@ pub struct MessageReadSummary{
     pub data: Option<(u64,u32,u8)>,
 }
 
+/// A trait for serializing a DocuFortMsg into a writer.
 pub trait WriteSerializer {
+    /// The type of error that can occur during serialization.
     type Error;
-    fn serialize_into<W: std::io::Write, T: serde::Serialize + DocuFortMsg>(writer: &mut W, message: &T) -> Result<(), Self::Error>;
-    fn serialized_size<T: serde::Serialize + DocuFortMsg>(message: &T) -> Result<usize, Self::Error>;
+    
+    /// Serializes a value into a writer.
+    ///
+    /// # Arguments
+    ///
+    /// * `writer` - The mutable reference to the writer to serialize into.
+    /// * `message` - The reference to the DocuFortMsg to be serialized.
+    ///
+    /// # Returns
+    ///
+    /// Returns `Ok(())` if serialization is successful, otherwise returns an error of type `Self::Error`.
+    ///
+    fn serialize_into<W: std::io::Write, T: Serialize + DocuFortMsg>(writer: &mut W, message: &T) -> Result<(), Self::Error>;
+    
+    /// Returns the serialized size of a Message.
+    ///
+    /// # Arguments
+    ///
+    /// * `message` - The reference to the DocuFortMsg to determine the serialized size of.
+    ///
+    /// # Returns
+    ///
+    /// Returns the size of the serialized value as a `usize`, or an error of type `Self::Error`.
+    ///
+    fn serialized_size<T: Serialize + DocuFortMsg>(message: &T) -> Result<usize, Self::Error>;
 }
+
+/// A trait for deserializing a DocufortMsg from bytes.
 pub trait ReadDeserializer {
+    /// The type of error that can occur during deserialization.
     type Error;
-    fn read_from<'de,T: serde::Deserialize<'de> + DocuFortMsg>(bytes: &[u8]) -> Result<T, Self::Error>;
+    
+    /// Deserializes a value from bytes.
+    ///
+    /// # Arguments
+    ///
+    /// * `bytes` - The byte slice containing the serialized data.
+    ///
+    /// # Returns
+    ///
+    /// Returns the deserialized DocuFortMsg, or an error of type `Self::Error`.
+    ///
+    fn read_from<'de, T: Deserialize<'de> + DocuFortMsg>(bytes: &[u8]) -> Result<T, Self::Error>;
 }
+
 
 pub trait DocuFortMsg {
     const MSG_TAG: u8;
