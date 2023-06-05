@@ -197,7 +197,7 @@ pub fn make_system(input: TokenStream) -> TokenStream {
     let clear_msg_flags = !(ecc_flag | msg_data_flag);
 
     let trait_tokens = quote!{
-        pub trait DocuFortMsgCoding: DocuFortMsg + serde::Serialize + for<'de>serde::Deserialize<'de> {
+        pub trait DocuFortMsgCoding: DocuFortMsg + Serialize + de::DeserializeOwned {
             fn write_to<W>(self,writer: &mut W,try_compress: Option<CompressionLevel>,calc_ecc:bool)->Result<(),#writer_error>
             where
                 W: std::io::Write + std::io::Seek,
@@ -231,7 +231,7 @@ pub fn make_system(input: TokenStream) -> TokenStream {
         pub fn read_msg<R,T>(reader: &mut R,msg_len:u8,flags:u8,error_correct:bool)->Result<(MessageReadSummary,T),#reader_error>
         where
             R: std::io::Read+std::io::Seek,
-            T: DocuFortMsg + for<'de>serde::Deserialize<'de>,
+            T: DocuFortMsg + de::DeserializeOwned,
         {
             let mut msg_len = msg_len as usize;
             let mut msg_and_meta_len = msg_len + 2;
@@ -277,7 +277,7 @@ pub fn make_system(input: TokenStream) -> TokenStream {
         pub fn write_doc<W,T>(writer: &mut W,message: T,try_compress: Option<CompressionLevel>,calc_ecc:bool)->Result<(),#writer_error>
         where
             W: std::io::Write + std::io::Seek,
-            T: DocuFortMsg + serde::Serialize,
+            T: DocuFortMsg + Serialize,
         {
             let mut msg_tag = T::MSG_TAG;
             
@@ -655,7 +655,7 @@ pub fn make_system(input: TokenStream) -> TokenStream {
         ///
         /// ```no_run
         /// let file = std::fs::File::open("my_file.dfort").expect("failed to open file");
-        /// let mmap_file = unsafe { memmap2::Mmap::map(&file).expect("failed to map file") };
+        /// let mmap_file = unsafe { Mmap::map(&file).expect("failed to map file") };
         ///
         /// match df_find_block_start(&mmap_file) {
         ///     Ok(offset) => println!("Found a valid DfBlockStart at offset {}", offset),
@@ -663,7 +663,7 @@ pub fn make_system(input: TokenStream) -> TokenStream {
         ///     Err(None) => println!("No valid DfBlockStart found in the file"),
         /// }
         /// ```
-        pub fn df_find_block_start(mmap_file: &memmap2::Mmap) -> Result<u64,Option<u64>,> {
+        pub fn df_find_block_start(mmap_file: &Mmap) -> Result<u64,Option<u64>,> {
             // Determine the size of the magic number in bytes
             let magic_number_size = MAGIC_NUMBER.len();
 
@@ -688,33 +688,7 @@ pub fn make_system(input: TokenStream) -> TokenStream {
             }
             Err(None)
         }
-        /// An enum summarizing the results of a DocuFort block verification.
-        ///
-        /// Each variant indicates a different outcome from the block verification process, and contains relevant data for handling that outcome.
-        ///
-        /// - `MaybeSuccess`: The block was potentially successfully verified. If errors were encountered, they are included along with their locations and suggested patches. 
-        /// The starting and ending file offsets to hash are included to allow implementer to check the integrity, along with the `DfBlockEnd` struct are also included. 
-        /// To confirm success, these patches should be applied and the hash of the block should be recomputed and compared with the hash in the `DfBlockEnd` struct.
-        ///
-        /// - `OpenABlock`: The block is an Atomic block that is currently open, indicating an unexpected termination during block writing. 
-        /// If any errors were encountered, they are included along with their locations and suggested patches. 
-        /// In this case, the file should be truncated at the block start and a new block should be attempted.
-        ///
-        /// - `OpenBBlock`: The block is a Basic block that is currently open, indicating an unexpected termination during block writing. 
-        /// If any errors were encountered, they are included along with their locations and suggested patches. 
-        /// The file should be truncated at the specified offset, then a DfBlockEnd calculated and written.
-        ///
-        /// - `BlockStartFailedDecoding`: The DfBlockStart struct failed to decode, implying serious corruption. 
-        /// The file should be truncated at the block start the implementer should try searching backward for the next magic number.
-        pub enum DfBlockVerificationSummary{
-            ///If there are patches they should be written to the file (file_offset,corrected_bytes), then hash the start..end range of the file to verify hash
-            MaybeSuccess{errors:Option<(usize,Vec<(u64, Vec<u8>)>)>,hash_start_index:u64,hash_end_index:u64,end_struct:DfBlockEnd},
-            ///If this is returned truncate file at block_start_offset and try finding another block
-            OpenABlock{errors:Option<(usize,Vec<(u64, Vec<u8>)>)>},
-            OpenBBlock{truncate_at_then_close_block:u64,errors:Option<(usize,Vec<(u64, Vec<u8>)>)>},
-            ///Treat this the same as the OpenABlock case. Truncate at start and try again.
-            BlockStartFailedDecoding,
-        }
+        
         /// Verifies a block in a memory-mapped DocuFort file, starting from the specified offset.
         ///
         /// This function decodes messages from the block, tracking any errors encountered and their locations. The verification ends when a `DfBlockEnd` message is decoded, or when a decoding error occurs.
@@ -733,7 +707,7 @@ pub fn make_system(input: TokenStream) -> TokenStream {
         ///
         /// ```no_run
         /// let file = std::fs::File::open("my_file.dfort").expect("failed to open file");
-        /// let mmap_file = unsafe { memmap2::Mmap::map(&file).expect("failed to map file") };
+        /// let mmap_file = unsafe { Mmap::map(&file).expect("failed to map file") };
         /// let block_start_offset = /* offset of the block start */;
         ///
         /// match df_check_block(&mmap_file, block_start_offset) {
@@ -747,7 +721,7 @@ pub fn make_system(input: TokenStream) -> TokenStream {
         ///         /* handle BlockStart decoding failure */,
         /// }
         /// ```
-        pub fn df_check_block(mmap_file: &memmap2::Mmap,block_start_offset:u64)->DfBlockVerificationSummary{
+        pub fn df_check_block(mmap_file: &Mmap,block_start_offset:u64)->DfBlockVerificationSummary{
             let mut tot_errors = 0;
             let mut patches: Vec<(u64, Vec<u8>)> = Vec::new();
 
@@ -1027,14 +1001,14 @@ pub fn generate_stub_structs(_: TokenStream) -> TokenStream {
         impl WriteSerializer for WriterStruct {
             type Error = WError;
         
-            fn serialize_into<W: std::io::Write, T: serde::Serialize + DocuFortMsg>(
+            fn serialize_into<W: std::io::Write, T: Serialize + DocuFortMsg>(
                 _writer: &mut W,
                 _message: &T,
             ) -> Result<(), Self::Error> {
                 todo!()
             }
         
-            fn serialized_size<T: serde::Serialize + DocuFortMsg>(
+            fn serialized_size<T: Serialize + DocuFortMsg>(
                 _message: &T,
             ) -> Result<usize, Self::Error> {
                 todo!()
@@ -1054,7 +1028,7 @@ pub fn generate_stub_structs(_: TokenStream) -> TokenStream {
         impl ReadDeserializer for ReaderStruct {
             type Error = RError;
         
-            fn read_from<'de, T: serde::Deserialize<'de> + DocuFortMsg>(
+            fn read_from<T: de::DeserializeOwned + DocuFortMsg>(
                 _bytes: &[u8],
             ) -> Result<T, Self::Error> {
                 todo!()
@@ -1189,12 +1163,12 @@ pub fn msg_impls(input: TokenStream) -> TokenStream {
             };
             // Construct the output tokens
             let serialize_tokens = quote! {
-                impl serde::Serialize for #struct_name {
+                impl Serialize for #struct_name {
                     fn serialize<S>(&self, serializer: S) -> Result<S::Ok, S::Error>
                     where
-                        S: serde::Serializer,
+                        S: Serializer,
                     {
-                        use serde::ser::SerializeStruct;
+                        use ser::SerializeStruct;
                         let mut s = serializer.serialize_struct(stringify!(#struct_name), #num_fields)?;
                         #(s.serialize_field(stringify!(#field_names), &self.#field_names)?;)*
                         s.end()
@@ -1203,7 +1177,7 @@ pub fn msg_impls(input: TokenStream) -> TokenStream {
 
                 struct #visitor_name;
 
-                impl<'de> ::serde::de::Visitor<'de> for #visitor_name {
+                impl<'de> de::Visitor<'de> for #visitor_name {
                     type Value = #struct_name;
 
                     fn expecting(&self, formatter: &mut std::fmt::Formatter) -> std::fmt::Result {
@@ -1212,21 +1186,21 @@ pub fn msg_impls(input: TokenStream) -> TokenStream {
 
                     fn visit_seq<A>(self, mut seq: A) -> Result<Self::Value, A::Error>
                     where
-                        A: ::serde::de::SeqAccess<'de>,
+                        A: de::SeqAccess<'de>,
                     {
                         Ok(#struct_name {
                             #(
-                                #field_names: seq.next_element()?.ok_or_else(|| ::serde::de::Error::invalid_length(#field_indices, &self))?,
+                                #field_names: seq.next_element()?.ok_or_else(|| de::Error::invalid_length(#field_indices, &self))?,
                             )*
                             #data_field_tokens
                         })
                     }
                 }
 
-                impl<'de> ::serde::Deserialize<'de> for #struct_name {
+                impl<'de> Deserialize<'de> for #struct_name {
                     fn deserialize<D>(deserializer: D) -> Result<Self, D::Error>
                     where
-                        D: ::serde::Deserializer<'de>,
+                        D: Deserializer<'de>,
                     {
                         deserializer.deserialize_seq(#visitor_name)
                     }

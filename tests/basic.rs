@@ -1,5 +1,6 @@
 
 
+use docufort::core::*;
 use docufort::*;
 use docufort_macros::{generate_stub_structs,make_system,make_msg_decoder,MsgCoder, MsgReadWrite};
 
