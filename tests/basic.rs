@@ -1,7 +1,7 @@
 
 
 use docufort::*;
-use docufort_macros::{generate_stub_structs,make_system,MsgCoder, MsgReadWrite};
+use docufort_macros::{generate_stub_structs,make_system,make_msg_decoder,MsgCoder, MsgReadWrite};
 
 generate_stub_structs!();
 
@@ -17,10 +17,12 @@ make_system!({
     eccer: EccerStruct,
     writer_error:AllError,
     reader_error:AllError
-}
-    TestMessage,
-    TestMessage1
+});
 
+make_msg_decoder!(
+    TestMessage,
+    TestMessage1,
+    AllError
 );
 
 impl DocuFortMsg for TestMessage{

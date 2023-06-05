@@ -20,18 +20,7 @@ use syn::token::Comma;
 use syn::{punctuated::Punctuated};
 
 
-struct IdentList(Vec<Ident>);
 
-impl Parse for IdentList {
-    fn parse(input: ParseStream) -> syn::Result<Self> {
-        let mut idents = Vec::new();
-        while !input.is_empty() {
-            idents.push(input.parse()?);
-            let _ = input.parse::<Token![,]>();
-        }    
-        Ok(IdentList(idents))
-    }    
-}  
 struct ItemStructs(Vec<syn::ItemStruct>);
 
 impl Parse for ItemStructs {
@@ -58,7 +47,6 @@ struct SystemParams {
     eccer: Ident,
     writer_error: Ident,
     reader_error: Ident,
-    structs: IdentList,
 }
 
 impl Parse for SystemParams {
@@ -114,7 +102,6 @@ impl Parse for SystemParams {
             // Skip comma if present, but it's optional on the last field
             let _ = content.parse::<Comma>();
         }
-        let structs:IdentList = input.parse()?;
 
 
         Ok(SystemParams {
@@ -129,7 +116,6 @@ impl Parse for SystemParams {
             eccer: eccer.ok_or_else(|| input.error("Expected `eccer` field"))?,
             writer_error: writer_error.ok_or_else(|| input.error("Expected `writer_error` field"))?,
             reader_error: reader_error.ok_or_else(|| input.error("Expected `reader_error` field"))?,
-            structs,
         })
     }
 }
@@ -164,27 +150,7 @@ impl Parse for SystemParams {
 ///     eccer: EccerStruct,
 ///     writer_error:AllError,
 ///     reader_error:AllError
-/// }
-///     #[derive(Debug,MsgCoder,MsgReadWrite)]
-///     #[write_error(AllError)]
-///     #[read_error(AllError)]
-///     pub struct TestMessage{
-///         field1:u8,
-///         field2:u32,
-///         field3:bool,
-///         data:Vec<u8>,
-///     }
-///
-///     #[derive(Debug,MsgCoder,MsgReadWrite)]
-///     #[write_error(AllError)]
-///     #[read_error(AllError)]
-///     pub struct TestMessage1{
-///         field1:u8,
-///         field2:u32,
-///         field3:bool,
-///     }
-///
-/// );
+/// });
 /// ```
 ///
 /// # Parameters
@@ -201,8 +167,6 @@ impl Parse for SystemParams {
 /// * `writer_error` - The error type for writer operations. Error: From: io:Error, Compressor::Error, Eccer::Error, WriteSerializer::Error
 /// * `reader_error` - The error type for reader operations. Error: ... ,ReadSerializer::Error>
 ///
-/// Each structure declaration represents a type of message that can be used in this system. Each
-/// message structure needs to implement the `DocuFortMsg` trait.
 ///
 /// For more information on system capabilities and how to implement, see the README in the main DocuFort repo.
 ///
@@ -220,7 +184,6 @@ pub fn make_system(input: TokenStream) -> TokenStream {
         eccer, 
         writer_error, 
         reader_error, 
-        structs 
     } = syn::parse_macro_input!(input as SystemParams);
 
     
@@ -398,57 +361,7 @@ pub fn make_system(input: TokenStream) -> TokenStream {
         }
     };
 
-    let mut struct_names_vec: Vec<Ident> = structs.0;//do we add blockstart/end here?
-    struct_names_vec.push(format_ident!("DfBlockStart"));
-    struct_names_vec.push(format_ident!("DfBlockEnd"));
-
-    // let generated = structs.0.into_iter().map(|s| {
-    //     let struct_name = s.ident.clone();
-    //     //dbg!(&struct_name);
-    //     struct_names_vec.push(struct_name);
-        
-    //     let has_data = has_data_field(&s.fields);
-    //     // Inspect derive attributes
-    //     //let attrs = s.attrs.clone();
-    //     let serialize = check_derive_attrs(&s.attrs,"Serialize");
-    //     let deserialize = check_derive_attrs(&s.attrs,"Deserialize");
-    //     let msg_coder = check_derive_attrs(&s.attrs,"MsgCoder");
-    //     let user_impl = check_derive_attrs(&s.attrs,"ManualMsgCoder");
-    //     //dbg!(&serialize,&deserialize,&msg_coder,&user_impl);
-    //     if user_impl {
-    //         //attrs = remove_derive(attrs, format_ident!("ManualMsgCoder"));
-    //         if has_data.is_ok() && *has_data.as_ref().unwrap() {
-    //             println!("Warning: 'data' field is present, be sure to add the '#[serde(skip_serializing)]' above the 'data' field.");
-    //         }
-    //     }else if !msg_coder && serialize && deserialize && has_data.is_ok() && *has_data.as_ref().unwrap(){
-    //         println!("Warning: Serialize and Deserialize are already derived for a struct with 'data' field. Consider if MsgCoder is appropriate. Otherwise be sure to add the '#[serde(skip_serializing)]' above the 'data' field.");
-
-    //     }else if (serialize && !deserialize) || (!serialize && deserialize) && !user_impl{
-    //        //panic!("Must derive Serialize && Deserialize together. If manually implemented add the derive tag 'ManualMsgCoder' to indicate that");
-    //     }else if !msg_coder && !(serialize && deserialize){
-    //         //attrs = add_derive(attrs,format_ident!("MsgCoder"));
-    //     }
-    //     //s.attrs = attrs;
-        
-    //     quote! {
-    //         #s 
-    //     }
-    // }).collect::<Vec<_>>();
-    let test_function = quote! {
-        #[test]
-        fn df_check_msg_tag_values() {
-            let mut tag_values: std::collections::HashSet<u8> = std::collections::HashSet::new();
-            #(
-                {
-                    let tag_value = <#struct_names_vec as DocuFortMsg>::MSG_TAG;
-                    assert!(tag_value & ECC_FLAG == 0,"MSG_TAG value found for {} has the ECC_FLAG bit high!", stringify!(#struct_names_vec));
-                    assert!(tag_value & MSG_DATA_FLAG == 0,"MSG_TAG value found for {} has the MSG_DATA_FLAG bit high!", stringify!(#struct_names_vec));
-                    assert!(!tag_values.contains(&tag_value), "Duplicate MSG_TAG value found for {}", stringify!(#struct_names_vec));
-                    tag_values.insert(tag_value);
-                }
-            )*
-        }
-    };
+    
 
     let sys_impls = quote!{
         impl DocuFortMsgCoding for DfBlockStart{
@@ -538,37 +451,7 @@ pub fn make_system(input: TokenStream) -> TokenStream {
             }
         }
     };
-    let enum_name = format_ident!("DfMessage");
-    let enum_tokens = quote! {
-        #[derive(Debug)]
-        pub enum #enum_name {
-            #(
-                #struct_names_vec(#struct_names_vec),
-            )*
-        }
-    };
-    let function_name = format_ident!("df_{}_decoder", enum_name.to_string().to_lowercase());
-
-    let decoder_tokens = quote!{
-        pub fn #function_name<R:std::io::Read+std::io::Seek>(reader:&mut R,error_correct:bool)->Result<(MessageReadSummary, #enum_name),#reader_error> {
-            let mut len_tag = [0;2];
-            reader.read_exact(&mut len_tag)?;
-            let flags = len_tag[1];
-            let tag = flags & CLEAR_MSG_FLAGS;
-            match tag {
-                #(
-                    x if x == <#struct_names_vec>::MSG_TAG =>{
-                        let (mrs,msg) = <#struct_names_vec>::read_from(reader,len_tag[0],flags,error_correct)?;
-                        Ok((mrs,#enum_name::#struct_names_vec(msg)))
-                    },
-                )*
-                _ => panic!("Unknown Message Tag!")
-            }
-
-        }
-
-    };
-
+    
     // Build the output token stream
     let output = quote! {
         ///This only exists on the sys_data_tag
@@ -930,12 +813,6 @@ pub fn make_system(input: TokenStream) -> TokenStream {
         #trait_tokens
 
         #sys_impls
-
-        #enum_tokens
-
-        #decoder_tokens
-
-        #test_function
         
     };
 
@@ -1367,5 +1244,81 @@ pub fn msg_impls(input: TokenStream) -> TokenStream {
     }
 }
 
+struct IdentList(Vec<Ident>);
+
+impl Parse for IdentList {
+    fn parse(input: ParseStream) -> syn::Result<Self> {
+        let mut idents = Vec::new();
+        while !input.is_empty() {
+            idents.push(input.parse()?);
+            let _ = input.parse::<Token![,]>();
+        }    
+        Ok(IdentList(idents))
+    }    
+}  
 
 
+#[proc_macro]
+pub fn make_msg_decoder(input: TokenStream) -> TokenStream {
+    let structs:IdentList = syn::parse_macro_input!(input);
+
+    let mut struct_names_vec: Vec<Ident> = structs.0;//do we add blockstart/end here?
+    let reader_error = struct_names_vec.pop().unwrap();
+    struct_names_vec.push(format_ident!("DfBlockStart"));
+    struct_names_vec.push(format_ident!("DfBlockEnd"));
+
+    let test_function = quote! {
+        #[test]
+        fn df_check_msg_tag_values() {
+            let mut tag_values: std::collections::HashSet<u8> = std::collections::HashSet::new();
+            #(
+                {
+                    let tag_value = <#struct_names_vec as DocuFortMsg>::MSG_TAG;
+                    assert!(tag_value & ECC_FLAG == 0,"MSG_TAG value found for {} has the ECC_FLAG bit high!", stringify!(#struct_names_vec));
+                    assert!(tag_value & MSG_DATA_FLAG == 0,"MSG_TAG value found for {} has the MSG_DATA_FLAG bit high!", stringify!(#struct_names_vec));
+                    assert!(!tag_values.contains(&tag_value), "Duplicate MSG_TAG value found for {}", stringify!(#struct_names_vec));
+                    tag_values.insert(tag_value);
+                }
+            )*
+        }
+    };
+    let enum_name = format_ident!("DfMessage");
+    let enum_tokens = quote! {
+        #[derive(Debug)]
+        pub enum #enum_name {
+            #(
+                #struct_names_vec(#struct_names_vec),
+            )*
+        }
+    };
+    let function_name = format_ident!("df_{}_decoder", enum_name.to_string().to_lowercase());
+
+    let decoder_tokens = quote!{
+        pub fn #function_name<R:std::io::Read+std::io::Seek>(reader:&mut R,error_correct:bool)->Result<(MessageReadSummary, #enum_name),#reader_error> {
+            let mut len_tag = [0;2];
+            reader.read_exact(&mut len_tag)?;
+            let flags = len_tag[1];
+            let tag = flags & CLEAR_MSG_FLAGS;
+            match tag {
+                #(
+                    x if x == <#struct_names_vec>::MSG_TAG =>{
+                        let (mrs,msg) = <#struct_names_vec>::read_from(reader,len_tag[0],flags,error_correct)?;
+                        Ok((mrs,#enum_name::#struct_names_vec(msg)))
+                    },
+                )*
+                _ => panic!("Unknown Message Tag!")
+            }
+
+        }
+
+    };
+    let output = quote!{
+        #test_function
+
+        #enum_tokens
+
+        #decoder_tokens
+    };
+
+    output.into()
+}
