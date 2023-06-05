@@ -15,12 +15,23 @@ use syn::parse::Parse;
 use syn::parse::ParseStream;
 use syn::parse_macro_input;
 
-use syn::{Result, LitInt,ExprArray};
+use syn::{Result, LitInt};
 use syn::token::Comma;
 use syn::{punctuated::Punctuated};
 
 
+struct IdentList(Vec<Ident>);
 
+impl Parse for IdentList {
+    fn parse(input: ParseStream) -> syn::Result<Self> {
+        let mut idents = Vec::new();
+        while !input.is_empty() {
+            idents.push(input.parse()?);
+            let _ = input.parse::<Token![,]>();
+        }    
+        Ok(IdentList(idents))
+    }    
+}  
 struct ItemStructs(Vec<syn::ItemStruct>);
 
 impl Parse for ItemStructs {
@@ -41,14 +52,13 @@ struct SystemParams {
     msg_data_flag: u8,
     msg_and_data_ecc_len: u8,
     min_len_try_comp:usize,
-    magic_number: ExprArray,
     write_serializer: Ident,
     read_deserializer: Ident,
     compressor: Ident,
     eccer: Ident,
     writer_error: Ident,
     reader_error: Ident,
-    structs: ItemStructs,
+    structs: IdentList,
 }
 
 impl Parse for SystemParams {
@@ -61,7 +71,6 @@ impl Parse for SystemParams {
         let mut msg_data_flag = Some(0b01000000);
         let mut msg_and_data_ecc_len = Some(5);
         let mut min_len_try_comp = Some(35);
-        let mut magic_number = None;
         let mut write_serializer = None;
         let mut read_deserializer = None;
         let mut compressor = None;
@@ -100,16 +109,12 @@ impl Parse for SystemParams {
                     let len: LitInt = content.parse()?;
                     min_len_try_comp = Some(len.base10_parse::<usize>()?);
                 },
-                "magic_number" => {
-                    let byte_string: ExprArray = content.parse()?;
-                    magic_number = Some(byte_string);
-                },
                 _ => return Err(syn::Error::new(name.span(), "Unknown key")),
             }
             // Skip comma if present, but it's optional on the last field
             let _ = content.parse::<Comma>();
         }
-        let structs:ItemStructs = input.parse()?;
+        let structs:IdentList = input.parse()?;
 
 
         Ok(SystemParams {
@@ -118,7 +123,6 @@ impl Parse for SystemParams {
             msg_data_flag: msg_data_flag.ok_or_else(|| input.error("Expected `msg_data_flag` field"))?,
             msg_and_data_ecc_len: msg_and_data_ecc_len.ok_or_else(|| input.error("Expected `msg_and_data_ecc_len` field"))?,
             min_len_try_comp: min_len_try_comp.ok_or_else(|| input.error("Expected `min_len_try_comp` field"))?,
-            magic_number: magic_number.ok_or_else(|| input.error("Expected `magic_number` field"))?,
             write_serializer: write_serializer.ok_or_else(|| input.error("Expected `write_serializer` field"))?,
             read_deserializer: read_deserializer.ok_or_else(|| input.error("Expected `read_deserializer` field"))?,
             compressor: compressor.ok_or_else(|| input.error("Expected `compressor` field"))?,
@@ -153,7 +157,6 @@ impl Parse for SystemParams {
 ///     ecc_flag:0b00100000,
 ///     msg_data_flag:0b01000000,
 ///     msg_and_data_ecc_len:5,
-///     magic_number:[0x64, 0x6F, 0x63, 0x75, 0x66, 0x6F, 0x72, 0x74],
 ///     min_len_try_comp: 35,
 ///     write_serializer: WriterStruct,
 ///     read_deserializer: ReaderStruct,
@@ -190,7 +193,6 @@ impl Parse for SystemParams {
 /// * `ecc_flag` - The ECC flag to indicate if there is ECC data following the message (or Data).
 /// * `msg_data_flag` - The flag indicating when messages have an extended 'data' field.
 /// * `msg_and_data_ecc_len` - The length of the ECC for the message and data. Meaning depends on how you implement it.
-/// * `magic_number` - The magic number for the system. Used to find recovery points as well identify the file.
 /// * `min_len_try_comp` - The minimum length to try to compress, above which it will try compress, writing uncompressed if it is not beneficial.
 /// * `write_serializer` - The serializer for writing operations. Must implement WriteSerializer Trait.
 /// * `read_deserializer` - The deserializer for reading operations. Must implement ReadDerializer Trait.
@@ -211,7 +213,6 @@ pub fn make_system(input: TokenStream) -> TokenStream {
         ecc_flag, 
         msg_data_flag, 
         msg_and_data_ecc_len, 
-        magic_number, 
         min_len_try_comp, 
         write_serializer, 
         read_deserializer, 
@@ -226,15 +227,10 @@ pub fn make_system(input: TokenStream) -> TokenStream {
     
 
     // Convert magic_number to a token stream
-    let magic_number_length = magic_number.elems.len();
+    let magic_number_length = 8usize;
     let file_header_len = magic_number_length + 4;
     let block_start_len = magic_number_length + 8 + 2;//u64 ts + 2 for msg_len/tag
-    //  if magic_number.elems.len() != 8 {
-    //     return syn::Error::new_spanned(magic_number, "magic_number must be 8 bytes").to_compile_error().into();
-    // }
-    // Convert magic_number into Vec<Expr>
-    let magic_number: Vec<_> = magic_number.elems.into_iter().collect();
-
+ 
     let clear_msg_flags = !(ecc_flag | msg_data_flag);
 
     let trait_tokens = quote!{
@@ -402,42 +398,42 @@ pub fn make_system(input: TokenStream) -> TokenStream {
         }
     };
 
-    let mut struct_names_vec: Vec<Ident> = Vec::new();//do we add blockstart/end here?
+    let mut struct_names_vec: Vec<Ident> = structs.0;//do we add blockstart/end here?
     struct_names_vec.push(format_ident!("DfBlockStart"));
     struct_names_vec.push(format_ident!("DfBlockEnd"));
 
-    let generated = structs.0.into_iter().map(|s| {
-        let struct_name = s.ident.clone();
-        //dbg!(&struct_name);
-        struct_names_vec.push(struct_name);
+    // let generated = structs.0.into_iter().map(|s| {
+    //     let struct_name = s.ident.clone();
+    //     //dbg!(&struct_name);
+    //     struct_names_vec.push(struct_name);
         
-        let has_data = has_data_field(&s.fields);
-        // Inspect derive attributes
-        //let attrs = s.attrs.clone();
-        let serialize = check_derive_attrs(&s.attrs,"Serialize");
-        let deserialize = check_derive_attrs(&s.attrs,"Deserialize");
-        let msg_coder = check_derive_attrs(&s.attrs,"MsgCoder");
-        let user_impl = check_derive_attrs(&s.attrs,"ManualMsgCoder");
-        //dbg!(&serialize,&deserialize,&msg_coder,&user_impl);
-        if user_impl {
-            //attrs = remove_derive(attrs, format_ident!("ManualMsgCoder"));
-            if has_data.is_ok() && *has_data.as_ref().unwrap() {
-                println!("Warning: 'data' field is present, be sure to add the '#[serde(skip_serializing)]' above the 'data' field.");
-            }
-        }else if !msg_coder && serialize && deserialize && has_data.is_ok() && *has_data.as_ref().unwrap(){
-            println!("Warning: Serialize and Deserialize are already derived for a struct with 'data' field. Consider if MsgCoder is appropriate. Otherwise be sure to add the '#[serde(skip_serializing)]' above the 'data' field.");
+    //     let has_data = has_data_field(&s.fields);
+    //     // Inspect derive attributes
+    //     //let attrs = s.attrs.clone();
+    //     let serialize = check_derive_attrs(&s.attrs,"Serialize");
+    //     let deserialize = check_derive_attrs(&s.attrs,"Deserialize");
+    //     let msg_coder = check_derive_attrs(&s.attrs,"MsgCoder");
+    //     let user_impl = check_derive_attrs(&s.attrs,"ManualMsgCoder");
+    //     //dbg!(&serialize,&deserialize,&msg_coder,&user_impl);
+    //     if user_impl {
+    //         //attrs = remove_derive(attrs, format_ident!("ManualMsgCoder"));
+    //         if has_data.is_ok() && *has_data.as_ref().unwrap() {
+    //             println!("Warning: 'data' field is present, be sure to add the '#[serde(skip_serializing)]' above the 'data' field.");
+    //         }
+    //     }else if !msg_coder && serialize && deserialize && has_data.is_ok() && *has_data.as_ref().unwrap(){
+    //         println!("Warning: Serialize and Deserialize are already derived for a struct with 'data' field. Consider if MsgCoder is appropriate. Otherwise be sure to add the '#[serde(skip_serializing)]' above the 'data' field.");
 
-        }else if (serialize && !deserialize) || (!serialize && deserialize) && !user_impl{
-           //panic!("Must derive Serialize && Deserialize together. If manually implemented add the derive tag 'ManualMsgCoder' to indicate that");
-        }else if !msg_coder && !(serialize && deserialize){
-            //attrs = add_derive(attrs,format_ident!("MsgCoder"));
-        }
-        //s.attrs = attrs;
+    //     }else if (serialize && !deserialize) || (!serialize && deserialize) && !user_impl{
+    //        //panic!("Must derive Serialize && Deserialize together. If manually implemented add the derive tag 'ManualMsgCoder' to indicate that");
+    //     }else if !msg_coder && !(serialize && deserialize){
+    //         //attrs = add_derive(attrs,format_ident!("MsgCoder"));
+    //     }
+    //     //s.attrs = attrs;
         
-        quote! {
-            #s 
-        }
-    }).collect::<Vec<_>>();
+    //     quote! {
+    //         #s 
+    //     }
+    // }).collect::<Vec<_>>();
     let test_function = quote! {
         #[test]
         fn df_check_msg_tag_values() {
@@ -583,151 +579,12 @@ pub fn make_system(input: TokenStream) -> TokenStream {
         pub const MSG_DATA_FLAG: u8 = #msg_data_flag;
         pub const CLEAR_MSG_FLAGS: u8 = #clear_msg_flags;
         pub const ECC_LEN: u8 = #msg_and_data_ecc_len;
-        pub const MAGIC_NUMBER: [u8; #magic_number_length] = [#(#magic_number),*];
         ///Depends on how structured the data is in the messages.
         ///Pure Random breaks even around 45 (using best, zlib)
         ///u64 micro_unix_ts only need 20 bytes to break even (using best, zlib)
         const MIN_LEN_TRY_COMP:usize = #min_len_try_comp;
-
-       
-        /// A structure representing the start of a block in the data storage.
-        ///
-        /// This block start message is important for the crash recovery process. When set as `atomic`, all writes will be rolled back 
-        /// if the system crashes before this block is properly closed off with a block end message. This guarantees the atomicity of the
-        /// operations within the block, i.e., either all operations succeed, or none do.
-        ///
-        /// If `atomic` is set to false, the recovery process will attempt to recover as many trailing messages as possible and disregard
-        /// the last, incomplete message.
-        ///
-        /// # Fields
-        ///
-        /// - `magic_number`: An array of bytes representing the magic number for block start.
-        /// - `time_stamp`: A timestamp marking the start of the block. The most significant bit of the timestamp is used to mark if the block is atomic.
-        ///
-        /// # Example
-        ///
-        /// ```
-        /// let block_start = DfBlockStart::new(1622558943, true);
-        /// assert_eq!(block_start.is_atomic(), true);
-        /// assert_eq!(block_start.get_ts(), 1622558943);
-        /// ```
-        #[derive(Debug,PartialEq,Eq,PartialOrd,Ord,MsgCoder)]
-        pub struct DfBlockStart {
-            magic_number: [u8;#magic_number_length],
-            time_stamp:u64,
-        }
-        impl DfBlockStart {
-            /// Constructs a new `DfBlockStart` with the provided timestamp and atomicity.
-            ///
-            /// The `time_stamp` should be a valid UNIX timestamp (number of seconds since 1970-01-01 00:00:00 UTC).
-            /// The `atomic` parameter determines whether the block should be considered atomic or not.
-            ///
-            /// # Example
-            ///
-            /// ```
-            /// let block_start = DfBlockStart::new(1622558943, true);
-            /// ```
-            pub fn new(time_stamp:u64,atomic:bool) -> Self {
-                let mut ts = time_stamp;
-                if atomic {ts |= 1<<63}
-                Self {
-                    time_stamp: ts,
-                    magic_number: MAGIC_NUMBER,
-                }
-            }
-            /// Returns the timestamp of the block start.
-            ///
-            /// # Example
-            ///
-            /// ```
-            /// let block_start = DfBlockStart::new(1622558943, true);
-            /// assert_eq!(block_start.get_ts(), 1622558943);
-            /// ```
-            pub fn get_ts(&self)->u64{
-                self.time_stamp & !(1 << 63)
-            }
-            /// Returns `true` if the block is atomic, and `false` otherwise.
-            ///
-            /// # Example
-            ///
-            /// ```
-            /// let block_start = DfBlockStart::new(1622558943, true);
-            /// assert_eq!(block_start.is_atomic(), true);
-            /// ```
-            pub fn is_atomic(&self)->bool{
-                self.time_stamp & (1 << 63) == 1<<63
-            }
-        }
-        impl DocuFortMsg for DfBlockStart{
-            const MSG_TAG: u8 = 0;
-            const FIXED_INTS: bool = true;
-            fn take_data(self)->Option<Vec<u8>>{
-                None
-            }
-            fn has_data(&self)->Option<usize>{
-                None
-            }
-
-            fn set_data(&mut self, _data:Vec<u8>) {
-                panic!("No Data")
-            }
-        }
-        /// A structure representing the end of a block in the data storage.
-        ///
-        /// This block end marker contains a timestamp and a hash of the block content.
-        ///
-        /// The choice of the hash function is left to the implementer. It is perfectly acceptable to use the first 160 bits 
-        /// of a longer hash function output if a specific function that does not have a shorter output is preferred.
-        ///
-        /// # Fields
-        ///
-        /// - `time_stamp`: A timestamp marking the end of the block.
-        /// - `hash`: A 160-bit (20-byte) hash representing the block content.
-        ///
-        /// # Example
-        ///
-        /// ```
-        /// let block_end = DfBlockEnd::new(1622558943, [0u8; 20]);
-        /// ```
-        #[derive(Debug,PartialEq,Eq,PartialOrd,Ord,MsgCoder)]
-        pub struct DfBlockEnd {
-            pub time_stamp: u64,
-            pub hash: [u8;20],
-        }
-        impl DfBlockEnd {
-            /// Constructs a new `DfBlockEnd` with the provided timestamp and hash.
-            ///
-            /// The `time_stamp` should be a valid UNIX timestamp (number of seconds since 1970-01-01 00:00:00 UTC).
-            /// The `hash` should be a 160-bit (20-byte) value representing the hash of the block content.
-            ///
-            /// # Example
-            ///
-            /// ```
-            /// let block_end = DfBlockEnd::new(1622558943, [0u8; 20]);
-            /// ```
-            pub fn new(time_stamp:u64,hash: [u8;20]) -> Self {
-                Self {
-                    time_stamp,
-                    hash,
-                }
-            }
-            
-        }
-        impl DocuFortMsg for DfBlockEnd{
-            const MSG_TAG: u8 = 1;
-
-            const FIXED_INTS: bool = true;
-
-            fn take_data(self)->Option<Vec<u8>>{
-                None
-            }
-            fn has_data(&self)->Option<usize>{
-                None
-            }
-            fn set_data(&mut self, _data:Vec<u8>) {
-                panic!("No Data")
-            }
-        }
+        
+        
 
         /// Initializes a new DocuFort file at the specified path.
         ///
@@ -1072,8 +929,6 @@ pub fn make_system(input: TokenStream) -> TokenStream {
 
         #trait_tokens
 
-        #(#generated)*
-
         #sys_impls
 
         #enum_tokens
@@ -1158,12 +1013,12 @@ fn has_data_field(fields: &Fields) -> std::result::Result<bool, ()> {
 /// and `read_from` method using `ReadError` type for handling errors.
 /// 
 /// # Under the hood
-/// This macro simple calls the default 'write_doc' or 'read_msg' helper functions that are generated from the make_system macro.
+/// This macro simply calls the default 'write_doc' or 'read_msg' helper functions that are generated from the make_system macro.
 /// 
 /// If you want to make a default value fixed for a particular message, it is suggested to still use the write_doc/read_msg functions:
 /// ```text
 /// impl DocuFortMsgCoding for #struct_name {
-///     fn write_to<W>(self, writer: &mut W, try_compress: Option<CompressionLevel>, calc_ecc: bool) -> Result<(), #write_error>
+///     fn write_to<W>(self, writer: &mut W, _try_compress: Option<CompressionLevel>, _calc_ecc: bool) -> Result<(), #write_error>
 ///         where
 ///         W: std::io::Write + std::io::Seek,
 ///     {
@@ -1375,18 +1230,6 @@ pub fn generate_stub_structs(_: TokenStream) -> TokenStream {
 
     tokens.into()
 }
-struct IdentList(Vec<Ident>);
-
-impl Parse for IdentList {
-    fn parse(input: ParseStream) -> syn::Result<Self> {
-        let mut idents = Vec::new();
-        while !input.is_empty() {
-            idents.push(input.parse()?);
-            let _ = input.parse::<Token![,]>();
-        }    
-        Ok(IdentList(idents))
-    }    
-}    
 
 /// `MsgCoder` is a custom derive macro that simplifies Serde's `Serialize` and `Deserialize` trait implementations.
 /// It caters specifically to structures that contain an optional `data` field which should be last in order.

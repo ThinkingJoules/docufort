@@ -10,7 +10,6 @@ make_system!({
     ecc_flag:0b00100000,
     msg_data_flag:0b01000000,
     msg_and_data_ecc_len:5,
-    magic_number:[0x64, 0x6F, 0x63, 0x75, 0x66, 0x6F, 0x72, 0x74],
     min_len_try_comp: 35,
     write_serializer: WriterStruct,
     read_deserializer: ReaderStruct,
@@ -19,24 +18,8 @@ make_system!({
     writer_error:AllError,
     reader_error:AllError
 }
-    #[derive(Debug,MsgCoder,MsgReadWrite)]
-    #[write_error(AllError)]
-    #[read_error(AllError)]
-    pub struct TestMessage{
-        field1:u8,
-        field2:u32,
-        field3:bool,
-        data:Vec<u8>,
-    }
-
-    #[derive(Debug,MsgCoder,MsgReadWrite)]
-    #[write_error(AllError)]
-    #[read_error(AllError)]
-    pub struct TestMessage1{
-        field1:u8,
-        field2:u32,
-        field3:bool,
-    }
+    TestMessage,
+    TestMessage1
 
 );
 
@@ -53,6 +36,25 @@ impl DocuFortMsg for TestMessage{
     fn set_data(&mut self, data:Vec<u8>) {
         self.data = data;
     }
+}
+
+#[derive(Debug,MsgCoder,MsgReadWrite)]
+#[write_error(AllError)]
+#[read_error(AllError)]
+pub struct TestMessage{
+    field1:u8,
+    field2:u32,
+    field3:bool,
+    data:Vec<u8>,
+}
+
+#[derive(Debug,MsgCoder,MsgReadWrite)]
+#[write_error(AllError)]
+#[read_error(AllError)]
+pub struct TestMessage1{
+    field1:u8,
+    field2:u32,
+    field3:bool,
 }
 
 impl DocuFortMsg for TestMessage1{

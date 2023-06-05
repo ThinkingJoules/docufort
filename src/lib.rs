@@ -2,6 +2,147 @@
 
 pub use docufort_macros::*;
 
+pub const MAGIC_NUMBER: [u8; 8] = [0x64, 0x6F, 0x63, 0x75, 0x66, 0x6F, 0x72, 0x74];
+
+/// A structure representing the start of a block in the data storage.
+///
+/// This block start message is important for the crash recovery process. When set as `atomic`, all writes will be rolled back 
+/// if the system crashes before this block is properly closed off with a block end message. This guarantees the atomicity of the
+/// operations within the block, i.e., either all operations succeed, or none do.
+///
+/// If `atomic` is set to false, the recovery process will attempt to recover as many trailing messages as possible and disregard
+/// the last, incomplete message.
+///
+/// # Fields
+///
+/// - `magic_number`: An array of bytes representing the magic number for block start.
+/// - `time_stamp`: A timestamp marking the start of the block. The most significant bit of the timestamp is used to mark if the block is atomic.
+///
+/// # Example
+///
+/// ```
+/// let block_start = DfBlockStart::new(1622558943, true);
+/// assert_eq!(block_start.is_atomic(), true);
+/// assert_eq!(block_start.get_ts(), 1622558943);
+/// ```
+#[derive(Debug,PartialEq,Eq,PartialOrd,Ord,MsgCoder)]
+pub struct DfBlockStart {
+    pub magic_number: [u8;8],
+    pub time_stamp:u64,
+}
+impl DfBlockStart {
+    /// Constructs a new `DfBlockStart` with the provided timestamp and atomicity.
+    ///
+    /// The `time_stamp` should be a valid UNIX timestamp (number of seconds since 1970-01-01 00:00:00 UTC).
+    /// The `atomic` parameter determines whether the block should be considered atomic or not.
+    ///
+    /// # Example
+    ///
+    /// ```
+    /// let block_start = DfBlockStart::new(1622558943, true);
+    /// ```
+    pub fn new(time_stamp:u64,atomic:bool) -> Self {
+        let mut ts = time_stamp;
+        if atomic {ts |= 1<<63}
+        Self {
+            time_stamp: ts,
+            magic_number: MAGIC_NUMBER,
+        }
+    }
+    /// Returns the timestamp of the block start.
+    ///
+    /// # Example
+    ///
+    /// ```
+    /// let block_start = DfBlockStart::new(1622558943, true);
+    /// assert_eq!(block_start.get_ts(), 1622558943);
+    /// ```
+    pub fn get_ts(&self)->u64{
+        self.time_stamp & !(1 << 63)
+    }
+    /// Returns `true` if the block is atomic, and `false` otherwise.
+    ///
+    /// # Example
+    ///
+    /// ```
+    /// let block_start = DfBlockStart::new(1622558943, true);
+    /// assert_eq!(block_start.is_atomic(), true);
+    /// ```
+    pub fn is_atomic(&self)->bool{
+        self.time_stamp & (1 << 63) == 1<<63
+    }
+}
+impl DocuFortMsg for DfBlockStart{
+    const MSG_TAG: u8 = 0;
+    const FIXED_INTS: bool = true;
+    fn take_data(self)->Option<Vec<u8>>{
+        None
+    }
+    fn has_data(&self)->Option<usize>{
+        None
+    }
+
+    fn set_data(&mut self, _data:Vec<u8>) {
+        panic!("No Data")
+    }
+}
+/// A structure representing the end of a block in the data storage.
+///
+/// This block end marker contains a timestamp and a hash of the block content.
+///
+/// The choice of the hash function is left to the implementer. It is perfectly acceptable to use the first 160 bits 
+/// of a longer hash function output if a specific function that does not have a shorter output is preferred.
+///
+/// # Fields
+///
+/// - `time_stamp`: A timestamp marking the end of the block.
+/// - `hash`: A 160-bit (20-byte) hash representing the block content.
+///
+/// # Example
+///
+/// ```
+/// let block_end = DfBlockEnd::new(1622558943, [0u8; 20]);
+/// ```
+#[derive(Debug,PartialEq,Eq,PartialOrd,Ord,MsgCoder)]
+pub struct DfBlockEnd {
+    pub time_stamp: u64,
+    pub hash: [u8;20],
+}
+impl DfBlockEnd {
+    /// Constructs a new `DfBlockEnd` with the provided timestamp and hash.
+    ///
+    /// The `time_stamp` should be a valid UNIX timestamp (number of seconds since 1970-01-01 00:00:00 UTC).
+    /// The `hash` should be a 160-bit (20-byte) value representing the hash of the block content.
+    ///
+    /// # Example
+    ///
+    /// ```
+    /// let block_end = DfBlockEnd::new(1622558943, [0u8; 20]);
+    /// ```
+    pub fn new(time_stamp:u64,hash: [u8;20]) -> Self {
+        Self {
+            time_stamp,
+            hash,
+        }
+    }
+    
+}
+impl DocuFortMsg for DfBlockEnd{
+    const MSG_TAG: u8 = 1;
+
+    const FIXED_INTS: bool = true;
+
+    fn take_data(self)->Option<Vec<u8>>{
+        None
+    }
+    fn has_data(&self)->Option<usize>{
+        None
+    }
+    fn set_data(&mut self, _data:Vec<u8>) {
+        panic!("No Data")
+    }
+}
+
 /// A structure representing the compression level to be used in compression operations.
 /// Lower values mean less compression (faster, but larger result), 
 /// while higher values mean more compression (slower, but smaller result).
