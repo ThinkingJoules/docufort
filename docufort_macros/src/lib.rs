@@ -407,6 +407,7 @@ pub fn make_system(input: TokenStream) -> TokenStream {
                 return Ok((MessageReadSummary{message_start,errors,data:None},message))
             }
         }
+        
         impl DocuFortMsgCoding for DfBlockEnd{
             fn write_to<W: std::io::Write + std::io::Seek>(self,writer: &mut W,try_compress: Option<CompressionLevel>,calc_ecc:bool)->Result<(),#writer_error>{
                 let mut tag = Self::MSG_TAG;
@@ -417,7 +418,7 @@ pub fn make_system(input: TokenStream) -> TokenStream {
                 msg_bytes[0] = 28;
                 msg_bytes[1] = tag;
                 use std::io::Write;
-                (&mut msg_bytes[2..10]).write_all(&self.time_stamp.to_le_bytes()[..]).unwrap();;
+                (&mut msg_bytes[2..10]).write_all(&self.time_stamp.to_le_bytes()[..]).unwrap();
                 (&mut msg_bytes[10..]).write_all(&self.hash[..]).unwrap();
                 #eccer::calc_ecc_into(&mut ecc_buf, &msg_bytes)?;
                 writer.write_all(&msg_bytes)?;
@@ -537,7 +538,7 @@ pub fn make_system(input: TokenStream) -> TokenStream {
         /// let header_length = df_verify(path).unwrap();
         /// println!("The header length is {}", header_length);
         /// ```
-        pub fn df_verify(path: &std::path::Path) -> std::io::Result<usize> {
+        pub fn df_verify_configs(path: &std::path::Path) -> std::io::Result<usize> {
             // check if file exists
             if !path.exists() {
                 return Err(std::io::Error::new(std::io::ErrorKind::NotFound, "File not found."));
@@ -775,10 +776,131 @@ pub fn make_system(input: TokenStream) -> TokenStream {
             else if be.is_none() {return DfBlockVerificationSummary::OpenBBlock { truncate_at_then_close_block:end_of_block_pos, errors }}
             else{
                 let (be,be_msg_start) = be.unwrap();
-                let hash_end_index = be_msg_start + 8 + 20; //u64 ts + 160bit hash
-                return DfBlockVerificationSummary::MaybeSuccess { errors, hash_start_index: block_start_offset, hash_end_index, end_struct: be }
+                return DfBlockVerificationSummary::MaybeSuccess { errors, hash_start_index: block_start_offset, hash_end_index:be_msg_start, end_struct: be }
             }
         }
+
+
+
+        pub enum RecoveryError{
+            Io(std::io::Error),
+            ///How many bytes were truncated from the end of the file
+            SuccessWithTruncation{amt_truncated:u64,had_errors:bool},
+            ///Empty DocuFortFile
+            NoBlocksFound,
+            ///Should probably integrity check the whole file...
+            BlockFoundWithErrors,
+            OtherError(#writer_error)
+        }
+        impl From<std::io::Error> for RecoveryError{
+            fn from(value: std::io::Error) -> Self {
+                Self::Io(value)
+            }
+        }
+        impl From<#writer_error> for RecoveryError{
+            fn from(value: #writer_error) -> Self {
+                Self::OtherError(value)
+            }
+        }
+
+        pub fn recover(file_path: &std::path::Path) -> Result<(), RecoveryError> {
+            use std::{path::Path, fs::OpenOptions, io::{SeekFrom, Seek, Read,Write}};
+
+            fn apply_patches(path: &Path, patches: Vec<(u64, Vec<u8>)>, start: u64, end: u64) -> std::io::Result<Vec<u8>> {
+                // Open the file in read-write mode.
+                let mut file = OpenOptions::new()
+                    .read(true)
+                    .write(true)
+                    .open(path)?;
+            
+                // Apply patches.
+                for patch in patches {
+                    let (position, data) = patch;
+                    file.seek(SeekFrom::Start(position))?;
+                    file.write_all(&data)?;
+                }
+            
+                // Seek to the start position.
+                file.seek(SeekFrom::Start(start))?;
+            
+                // Read to end position.
+                let mut buffer = vec![0; (end - start) as usize];
+                file.read_exact(&mut buffer)?;
+            
+                Ok(buffer)
+            }
+            let file = std::fs::File::open(file_path)?;
+            let mmap = unsafe { Mmap::map(&file)? };
+
+
+            let block_start_offset = match df_find_block_start(&mmap) {
+                Ok(offset) => offset,
+                Err(Some(offset)) => offset,
+                Err(None) => return Err(RecoveryError::NoBlocksFound),
+            };
+
+            match df_check_block(&mmap, block_start_offset) {
+                DfBlockVerificationSummary::MaybeSuccess { errors, hash_start_index, hash_end_index, end_struct } => {
+                    assert!(block_start_offset == hash_start_index);
+                    if let Some((_,patches)) = errors {
+                        let hash_bytes = apply_patches(file_path, patches, hash_start_index, hash_end_index)?;
+                        let h = #write_serializer::hash(&hash_bytes);
+                        //we assert here, since we shouldn't have any errors due to the nature of last block recovery
+                        //if we were doing integrity, we would hash first, then if it fails -> def_check_block
+                        assert!(h == end_struct.hash);
+                        return Err(RecoveryError::BlockFoundWithErrors)
+                    }else{
+                        let h = #write_serializer::hash(&mmap[hash_start_index as usize..hash_end_index as usize]);
+                        assert!(h == end_struct.hash)
+                    }
+
+                },
+                DfBlockVerificationSummary::BlockStartFailedDecoding |
+                DfBlockVerificationSummary::OpenABlock { .. } => {
+                    let file = OpenOptions::new()
+                        .read(true)
+                        .write(true)
+                        .open(file_path)?;
+
+                    file.set_len(block_start_offset)?;
+                    //next call should end in a fully closed block.
+                    return recover(file_path)
+
+                },
+                DfBlockVerificationSummary::OpenBBlock { truncate_at_then_close_block, errors } => {
+                    let mut file = OpenOptions::new()
+                    .read(true)
+                    .write(true)
+                    .open(file_path)?;
+                    let truncation_amt = file.metadata()?.len() - truncate_at_then_close_block;
+                    let mut had_errors = false;
+                    let block_bytes = if let Some((_,patches)) = errors {
+                        let bytes = apply_patches(file_path, patches, block_start_offset, truncate_at_then_close_block)?;
+                        file.set_len(block_start_offset)?;
+                        had_errors = true;
+                        bytes
+                    }else{
+                        file.set_len(block_start_offset)?;
+                        let mut buffer = vec![0; (truncate_at_then_close_block - block_start_offset) as usize];
+                        file.read_exact(&mut buffer)?;
+                        buffer
+                    };
+                    file.seek(SeekFrom::End(0))?;
+                    let ts = #write_serializer::current_timestamp();
+                    let h = #write_serializer::hash(&block_bytes);
+
+                    let be = DfBlockEnd::new(ts,h);
+                    be.write_to(&mut file,None,true)?;
+                    return Err(RecoveryError::SuccessWithTruncation{ amt_truncated: truncation_amt, had_errors })
+                },
+            }
+
+        
+            Ok(())
+        }
+
+
+
         
         #writer_tokens
         
@@ -1011,6 +1133,13 @@ pub fn generate_stub_structs(_: TokenStream) -> TokenStream {
             fn serialized_size<T: Serialize + DocuFortMsg>(
                 _message: &T,
             ) -> Result<usize, Self::Error> {
+                todo!()
+            }
+            fn current_timestamp()->u64{
+                todo!()
+            }
+
+            fn hash(bytes:&[u8])->[u8;20]{
                 todo!()
             }
         }

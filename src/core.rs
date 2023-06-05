@@ -125,7 +125,6 @@ impl DfBlockEnd {
             hash,
         }
     }
-    
 }
 impl DocuFortMsg for DfBlockEnd{
     const MSG_TAG: u8 = 1;
@@ -349,6 +348,13 @@ pub trait WriteSerializer {
     /// Returns the size of the serialized value as a `usize`, or an error of type `Self::Error`.
     ///
     fn serialized_size<T: Serialize + DocuFortMsg>(message: &T) -> Result<usize, Self::Error>;
+
+    ///Inteded to be microseconds, but doesn't have to be.
+    fn current_timestamp()->u64;
+
+    ///For hashing the data blocks for integrity checks.
+    fn hash(bytes:&[u8])->[u8;20];
+
 }
 
 /// A trait for deserializing a DocufortMsg from bytes.
