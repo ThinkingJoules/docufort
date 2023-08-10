@@ -1,11 +1,21 @@
 [package]
 name = "docufort"
-version = "0.1.0"
+version = "0.2.0"
 edition = "2021"
 
 # See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
 
 [dependencies]
-serde = { version = "1.0", features = ["derive"] }
-memmap2 = "0.6.1"
-docufort_macros = { path = "./docufort_macros" }
+reed-solomon = "0.2.1"
+
+[dev-dependencies]
+blake3 = "1.2.0"
+
+[features]
+ecc_len_2 = []
+ecc_len_4 = []
+ecc_len_6 = []
+ecc_len_8 = []
+ecc_len_16 = []
+ecc_len_32 = []
+default = ["ecc_len_4"]

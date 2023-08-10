@@ -1,6 +1,0 @@
-{
-    "rust-analyzer.linkedProjects": [
-        "./docufort_macros/Cargo.toml",
-        "./Cargo.toml"
-    ]
-}
