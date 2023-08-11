@@ -27,6 +27,8 @@ pub fn find_block_start<RW: std::io::Read + std::io::Write + std::io::Seek>(file
     // Ensure the file is large enough to contain the magic number
     let file_len = file.seek(SeekFrom::End(0))?;
     let min_size = FILE_HEADER_LEN as usize + MN_ECC_LEN;
+    if file_len == FILE_HEADER_LEN as u64 {return Ok(FILE_HEADER_LEN as u64)}
+    if file_len > FILE_HEADER_LEN as u64 && file_len < min_size as u64 {return Ok(FILE_HEADER_LEN as u64)}
     if file_len < min_size as u64 {
         return Err(std::io::Error::new(std::io::ErrorKind::Other, "File is too small"));
     }
@@ -133,6 +135,7 @@ pub fn try_read_block<RW:std::io::Write + std::io::Read + std::io::Seek,B:BlockI
     }
 }
 
+#[derive(Clone, Debug, Default, PartialEq, Eq)]
 pub struct TailRecoverySummary{
     pub original_file_len:u64,
     pub recovered_file_len:u64,
@@ -156,7 +159,7 @@ pub fn recover_tail<B:BlockInputs>(file_path: &std::path::Path) -> Result<TailRe
     loop {
         let current_file_len = file.metadata()?.len();
         let block_start_offset = match find_block_start(&mut file) {
-            Ok(offset) if offset < FILE_HEADER_LEN as u64 => return Ok(TailRecoverySummary { original_file_len, recovered_file_len: current_file_len, file_ops, has_blocks: false, tot_errors_corrected,corrupted_content_blocks:vec![] }),
+            Ok(offset) if offset <= FILE_HEADER_LEN as u64 => return Ok(TailRecoverySummary { original_file_len, recovered_file_len: current_file_len, file_ops, has_blocks: false, tot_errors_corrected,corrupted_content_blocks:vec![] }),
             Err(e) => return Err(e.into()),
             Ok(offset) => offset,
         };
@@ -199,7 +202,7 @@ pub fn recover_tail<B:BlockInputs>(file_path: &std::path::Path) -> Result<TailRe
                 //then we could just buffer update to get the hash to avoid a large allocation.
                 file.set_len(*truncate_at_then_close_block)?;
                 file.seek(SeekFrom::End(0))?;
-                let time_stamp = B::current_timestamp();
+                let time_stamp = B::current_timestamp(0);
                 let header = ComponentHeader::new_from_parts(BlockTag::EndBlock as u8, time_stamp, None);
                 write_block_end(&mut file, &header, &hash_for_end)?;
                 continue; //should end in a closed block

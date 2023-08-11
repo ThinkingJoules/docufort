@@ -115,9 +115,8 @@ pub fn write_header<W: std::io::Write>(writer: &mut W,header:&ComponentHeader)->
 ///Calculates ECC and Writes the header to the given writer.
 pub fn write_content_header<W: std::io::Write, B:BlockInputs>(writer: &mut W,data_len:u32,has_ecc:bool,time_stamp: Option<[u8;8]>,hasher:&mut B)->Result<(),ReadWriteError>{
     let tag = if has_ecc {BlockTag::CEComponent as u8}else{BlockTag::CComponent as u8};
-    let time_stamp = if let Some(ts) = time_stamp {ts}else{B::current_timestamp()};
-    let data = data_len.to_le_bytes();
-    let content_header = ComponentHeader::new_from_parts(tag, time_stamp, Some(data));
+    let time_stamp = if let Some(ts) = time_stamp {ts}else{B::current_timestamp(0)};
+    let content_header = ComponentHeader::new_from_parts(tag, time_stamp, Some(data_len));
     let mut ha = HashAdapter::new(writer, hasher);
     use std::io::Write;
     ha.write_all(content_header.as_slice())?;
@@ -138,6 +137,12 @@ pub fn write_content<W: std::io::Write,B:BlockInputs>(writer: &mut W,content:&[u
 /// Writer represents the append only file, with the writer position at the end of the file.
 pub fn write_block_end<W: std::io::Write>(writer: &mut W,header:&ComponentHeader,hash:&[u8;HASH_LEN])->Result<(),ReadWriteError>{
     write_header(writer, header)?;
+    write_block_hash(writer, hash)?;
+    Ok(())
+}
+
+/// Writer represents the append only file, with the writer position at the end of the file.
+pub fn write_block_hash<W: std::io::Write>(writer: &mut W,hash:&[u8;HASH_LEN])->Result<(),ReadWriteError>{
     writer.write_all(hash)?;
     calculate_ecc_chunk(&hash, writer)?;
     Ok(())
@@ -156,8 +161,8 @@ pub fn write_atomic_block<W: std::io::Write,B:BlockInputs>(writer: &mut W,start_
     let mut h = B::new();
     let tag = if calc_ecc {BlockTag::StartAEBlock}else{BlockTag::StartABlock};
     let data = content.len() as u32;
-    let time_stamp = start_time_stamp.unwrap_or_else(||B::current_timestamp());
-    let header = ComponentHeader::new_from_parts(tag as u8,time_stamp , Some(data.to_le_bytes()));
+    let time_stamp = start_time_stamp.unwrap_or_else(||B::current_timestamp(0));
+    let header = ComponentHeader::new_from_parts(tag as u8,time_stamp , Some(data));
     write_header(writer, &header)?;   
     write_content(writer, content, calc_ecc, &mut h)?;
     let hash = h.finalize();
@@ -167,7 +172,7 @@ pub fn write_atomic_block<W: std::io::Write,B:BlockInputs>(writer: &mut W,start_
     }else{
         let tag = BlockTag::EndBlock;
         let data = None;
-        let time_stamp = B::current_timestamp();
+        let time_stamp = B::current_timestamp(0);
         let header = ComponentHeader::new_from_parts(tag as u8,time_stamp , data);
         write_block_end(writer, &header, &hash)?;
     }
@@ -182,6 +187,7 @@ mod test_super {
     use super::*;
     use std::io::Cursor;
 
+    #[derive(Clone, Debug)]
     struct DummyHasher(blake3::Hasher);
     impl BlockInputs for DummyHasher {
         fn new() -> Self {
@@ -196,7 +202,7 @@ mod test_super {
             self.0.finalize().as_bytes()[0..HASH_LEN].try_into().unwrap()
         }
 
-        fn current_timestamp() -> [u8;8] {
+        fn current_timestamp(_:u8) -> [u8;8] {
             unimplemented!()
         }
     }

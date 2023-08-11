@@ -1,5 +1,6 @@
 #![allow(dead_code)]
 
+#[derive(Clone, Debug)]
 pub struct DummyInput {
     hasher: blake3::Hasher,
 }
@@ -21,7 +22,7 @@ impl BlockInputs for DummyInput {
         result
     }
 
-    fn current_timestamp() -> [u8; 8] {
+    fn current_timestamp(_:u8) -> [u8; 8] {
         [7, 6, 5, 4, 3, 2, 1, 0]
     }
 }
@@ -44,7 +45,7 @@ pub fn generate_test_file() -> Cursor<Vec<u8>> {
 
     // Write BlockStart for Best Effort Block
     if log_pos {println!("BLOCK START: {}",cursor.position())};
-    let b_block_header = ComponentHeader::new_from_parts(BlockTag::StartBBlock as u8, DummyInput::current_timestamp(), None);
+    let b_block_header = ComponentHeader::new_from_parts(BlockTag::StartBBlock as u8, DummyInput::current_timestamp(0), None);
     write_header(&mut cursor, &b_block_header).unwrap();
 
     // Write 3 Content Components
@@ -59,7 +60,7 @@ pub fn generate_test_file() -> Cursor<Vec<u8>> {
 
 
     let b_block_hash = hasher.finalize();
-    let block_end_header = ComponentHeader::new_from_parts(BlockTag::EndBlock as u8, DummyInput::current_timestamp(), None);
+    let block_end_header = ComponentHeader::new_from_parts(BlockTag::EndBlock as u8, DummyInput::current_timestamp(0), None);
     write_block_end(&mut cursor, &block_end_header, &b_block_hash).unwrap();
     
     if log_pos {println!("MN START: {}",cursor.position())};

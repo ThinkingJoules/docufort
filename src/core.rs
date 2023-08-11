@@ -4,7 +4,7 @@ use crate::{*, ecc::calc_ecc_data_len, recovery::BlockReadSummary};
 
 
 
-#[derive(Debug,Clone,PartialEq,Eq,PartialOrd,Ord)]
+#[derive(Copy,Debug,Clone,PartialEq,Eq,PartialOrd,Ord)]
 pub struct ComponentHeader([u8;HEADER_LEN],u64);
 
 impl ComponentHeader {
@@ -12,12 +12,12 @@ impl ComponentHeader {
         assert_eq!(slice.len(),HEADER_LEN);
         Self(slice.try_into().unwrap(),start_offset)
     }
-    pub fn new_from_parts(tag:u8,time_stamp:[u8;8],data:Option<[u8;4]>) -> Self {
+    pub fn new_from_parts(tag:u8,time_stamp:[u8;8],content_len:Option<u32>) -> Self {
         let mut arr = [0u8;HEADER_LEN];
         arr[0] = tag;
         arr[1..9].copy_from_slice(&time_stamp);
-        if let Some(data) = data {
-            arr[9..13].copy_from_slice(&data);
+        if let Some(data) = content_len {
+            arr[9..13].copy_from_slice(&data.to_le_bytes());
         }
         Self(arr,0)
     }
@@ -78,19 +78,19 @@ impl Block {
     }
 }
 
-#[derive(Debug,Clone,PartialEq,Eq,PartialOrd,Ord)]
+#[derive(Copy,Debug,Clone,PartialEq,Eq,PartialOrd,Ord)]
 pub struct Content {
     pub data_len: u32,
     pub data_start:u64,
     pub ecc: bool
 }
 /// A structure representing the end of a block in the data storage.
-#[derive(Debug,Clone,PartialEq,Eq,PartialOrd,Ord)]
+#[derive(Copy,Debug,Clone,PartialEq,Eq,PartialOrd,Ord)]
 pub struct BlockEnd{
     pub header:ComponentHeader,
     pub hash: BlockHash
 }
-#[derive(Debug,Clone,PartialEq,Eq,PartialOrd,Ord)]
+#[derive(Copy,Debug,Clone,PartialEq,Eq,PartialOrd,Ord)]
 pub struct BlockHash([u8;HASH_AND_ECC_LEN]);
 
 impl BlockHash {
@@ -146,7 +146,7 @@ impl BlockState {
 }
 
 /// A trait for hashing the block data.
-pub trait BlockInputs {
+pub trait BlockInputs:Clone {
     fn new() -> Self;
     ///Add state to the hasher
     fn update(&mut self, data: &[u8]);
@@ -154,6 +154,9 @@ pub trait BlockInputs {
     fn finalize(&self) -> [u8; HASH_LEN];
     ///Used to return the timestamp that all block messages carry.
     ///Does not need to be a timestamp, but must be 8 bytes
-    fn current_timestamp() -> [u8;8];
+    ///The thread_id can be used to &= the lowest bits to be unique per thread
+    ///It is implementation specific.
+    ///This lib will always use thread_id 0;
+    fn current_timestamp(thread_id:u8) -> [u8;8];
 }
 

@@ -15,6 +15,7 @@ pub mod write;
 pub mod ecc;
 pub mod recovery;
 pub mod integrity;
+pub mod retry_writer;
 
 pub const MAGIC_NUMBER: [u8; 8] = [0x64, 0x6F, 0x63, 0x75, 0x66, 0x6F, 0x72, 0x74]; //b"docufort"
 pub const MN_ECC_LEN:usize = MAGIC_NUMBER.len() + ECC_LEN;

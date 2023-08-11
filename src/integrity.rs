@@ -86,7 +86,8 @@ pub fn integrity_check_file<B: BlockInputs>(file_path: &std::path::Path) -> Resu
                 // let BlockEnd { hash, .. } = block.clone().take_end();
                 // assert_eq!(&hash_as_read[..],hash.hash());//impl assertion since we are error correcting every block
             },
-            BlockState::OpenABlock { truncate_at } | BlockState::OpenBBlock { truncate_at, .. } => {
+            BlockState::OpenABlock { truncate_at } | 
+            BlockState::OpenBBlock { truncate_at, .. } => {
                 //We set the file_len to reflect how far we have integrity checked
                 file_len = *truncate_at;
                 break;
