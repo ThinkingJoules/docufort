@@ -152,24 +152,13 @@ where
         (clean, Op::AtomicWrite(t)) =>{
             let time_stamp = time_stamp.unwrap_or_else(||B::current_timestamp(0));
             let data_len = t.as_ref().len() as u32;
-            let ops = if clean.is_closed(){
-                vec![
-                    InnerOp::WriteMagicNumber,
-                    InnerOp::WriteABlockStart{time_stamp, data_len, calc_ecc },
-                    InnerOp::WriteContent(t,None,calc_ecc),
-                    InnerOp::WriteEndHeader { time_stamp: None, hasher:None },
-                    InnerOp::WriteHash (None)
-
-                ]
-            }else{
-                vec![
-                    InnerOp::WriteABlockStart{time_stamp, data_len, calc_ecc },
-                    InnerOp::WriteContent(t,None,calc_ecc),
-                    InnerOp::WriteEndHeader { time_stamp: None, hasher:None },
-                    InnerOp::WriteHash (None)
-    
-                ]
-            };
+            let ops = vec![
+                if clean.is_closed() { Some(InnerOp::WriteMagicNumber) } else { None },
+                Some(InnerOp::WriteABlockStart { time_stamp, data_len, calc_ecc }),
+                Some(InnerOp::WriteContent(t, None, calc_ecc)),
+                Some(InnerOp::WriteEndHeader { time_stamp: None, hasher: None }),
+                Some(InnerOp::WriteHash(None)),
+            ].into_iter().filter_map(|x| x).collect::<Vec<_>>();
             (TailState::ClosedBlock,ops)
         },
         (clean, Op::ContentWrite(t)) =>  {
@@ -180,20 +169,12 @@ where
             };
             tie_break_stamp(&mut s_stamp, &c_stamp);
             let data_len = t.as_ref().len() as u32;
-            let ops = if clean.is_closed(){
-                vec![
-                    InnerOp::WriteMagicNumber,
-                    InnerOp::WriteBBlockStart{time_stamp:s_stamp },
-                    InnerOp::WriteContentHeader{time_stamp:c_stamp,data_len,calc_ecc, hasher: Some(B::new()) },
-                    InnerOp::WriteContent(t,None,calc_ecc),
-                ]
-            }else{
-                vec![
-                    InnerOp::WriteBBlockStart{time_stamp:s_stamp },
-                    InnerOp::WriteContentHeader{time_stamp:c_stamp,data_len,calc_ecc, hasher: Some(B::new()) },
-                    InnerOp::WriteContent(t,None,calc_ecc),
-                ]
-            };
+            let ops = vec![
+                if clean.is_closed() { Some(InnerOp::WriteMagicNumber) } else { None },
+                Some(InnerOp::WriteBBlockStart { time_stamp: s_stamp }),
+                Some(InnerOp::WriteContentHeader { time_stamp: c_stamp, data_len, calc_ecc, hasher: Some(B::new()) }),
+                Some(InnerOp::WriteContent(t, None, calc_ecc)),
+            ].into_iter().filter_map(|x| x).collect::<Vec<_>>();
             (TailState::OpenBBlock { hasher:B::new() },ops)
         },
     };
