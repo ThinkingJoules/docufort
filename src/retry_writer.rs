@@ -1,7 +1,7 @@
 /*!
 This is a wrapper for trying to write IO repeatedly.
 
-I don't know how likely IO is to return error, when a second or third attempt my succeed.
+I don't know how likely IO is to return error, when a second or third attempt may succeed.
 
 This is a wrapper that will try to write distinct parts of the block multiple times in case of some weird error stuff.
 
@@ -10,6 +10,8 @@ This may be overkill, but logically it will only fail if there is *really* a pro
 The retry count is per Operation attempt.
 
 The idea is that this would be put in it's own thread and other threads can send Operations to it through a channel.
+
+Or you could wrap it in a struct that stores the return values and a file handle, and then wrap that in a mutex or something.
 
 */
 
