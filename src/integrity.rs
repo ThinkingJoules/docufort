@@ -100,6 +100,9 @@ pub fn integrity_check_file<B: BlockInputs>(file_path: &std::path::Path) -> Resu
             BlockState::InvalidBlockStructure { end_of_last_good_component, .. } =>{
                 return Err(IntegrityErr::InvalidBlockStructure { start_of_bad_component: *end_of_last_good_component})
             }
+            BlockState::ProbablyNotStartHeader { start_from } => {
+                return Err(IntegrityErr::Corruption(*start_from,ComponentTag::StartHeader))
+            }
             BlockState::DataCorruption { component_start, component_tag,.. } => {
                 return Err(IntegrityErr::Corruption(*component_start,*component_tag))
             },

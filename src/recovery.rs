@@ -20,20 +20,20 @@ pub struct BlockReadSummary{
     pub corrupted_content_blocks:Vec<CorruptDataSegment>
 }
 
-/// Attempts to find a MAGIC_NUMBER, starting from the end of the file.
+/// Attempts to find a MAGIC_NUMBER, starting from the given position of the reader.
 pub fn find_block_start<RW: std::io::Read + std::io::Write + std::io::Seek>(file: &mut RW)-> std::io::Result<u64> {
     const MN_SIZE:usize = MAGIC_NUMBER.len();
 
     // Ensure the file is large enough to contain the magic number
-    let file_len = file.seek(SeekFrom::End(0))?;
+    let start_pos = file.seek(SeekFrom::Current(0))?;
     let min_size = FILE_HEADER_LEN as usize + MN_ECC_LEN;
-    if file_len == FILE_HEADER_LEN as u64 {return Ok(FILE_HEADER_LEN as u64)}
-    if file_len > FILE_HEADER_LEN as u64 && file_len < min_size as u64 {return Ok(FILE_HEADER_LEN as u64)}
-    if file_len < min_size as u64 {
+    if start_pos == FILE_HEADER_LEN as u64 {return Ok(FILE_HEADER_LEN as u64)}
+    if start_pos > FILE_HEADER_LEN as u64 && start_pos < min_size as u64 {return Ok(FILE_HEADER_LEN as u64)}
+    if start_pos < min_size as u64 {
         return Err(std::io::Error::new(std::io::ErrorKind::Other, "File is too small"));
     }
     let mut buff = [0u8;MN_ECC_LEN];
-    let end_index = file_len - MN_ECC_LEN as u64;
+    let end_index = start_pos - MN_ECC_LEN as u64;
     // Iterate over the file in reverse, one byte at a time
     for start_index in (FILE_HEADER_LEN as u64..=end_index).rev() {
         file.seek(SeekFrom::Start(start_index))?;  
@@ -63,7 +63,7 @@ pub fn try_read_block<RW:std::io::Write + std::io::Read + std::io::Seek,B:BlockI
     let (mut errors_corrected,start) = match read_header(reader_writer,error_correct_header){
         Ok(a) => a,
         Err(ReadWriteError::EndOfFile) => return  Ok(BlockState::IncompleteStartHeader { truncate_at: block_start - MN_ECC_LEN as u64 }),
-        Err(ReadWriteError::EccTooManyErrors) => return Ok(BlockState::DataCorruption { component_start:block_start, is_b_block: false, component_tag: ComponentTag::StartHeader }),
+        Err(ReadWriteError::EccTooManyErrors) => return Ok(BlockState::ProbablyNotStartHeader{start_from:block_start}) ,//return Ok(BlockState::DataCorruption { component_start:block_start, is_b_block: false, component_tag: ComponentTag::StartHeader }),
         Err(e) => return Err(e)
     };
     match start.tag() {
@@ -156,8 +156,12 @@ pub fn recover_tail<B:BlockInputs>(file_path: &std::path::Path) -> Result<TailRe
     let mut file_ops = Vec::new();
     let mut tot_errors_corrected = 0;
     let mut error_correct_content = false;
+    let mut other_start = None;
     loop {
         let current_file_len = file.metadata()?.len();
+        if let Some(offset) = other_start.take() {
+            file.seek(SeekFrom::Start(offset))?;
+        }
         let block_start_offset = match find_block_start(&mut file) {
             Ok(offset) if offset <= FILE_HEADER_LEN as u64 => return Ok(TailRecoverySummary { original_file_len, recovered_file_len: current_file_len, file_ops, has_blocks: false, tot_errors_corrected,corrupted_content_blocks:vec![] }),
             Err(e) => return Err(e.into()),
@@ -169,6 +173,7 @@ pub fn recover_tail<B:BlockInputs>(file_path: &std::path::Path) -> Result<TailRe
         file_ops.push((block_start_offset,bs));
         let (_,bs) = file_ops.last().unwrap();
         match bs {
+            BlockState::ProbablyNotStartHeader{ start_from } => {other_start = Some(*start_from)}
             BlockState::Closed (BlockReadSummary { errors_corrected, block,  hash_as_read, corrupted_content_blocks, .. }) => {
                 tot_errors_corrected += errors_corrected;
                 let BlockEnd { hash,.. } = block.clone().take_end();

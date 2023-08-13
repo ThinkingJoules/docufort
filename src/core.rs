@@ -126,6 +126,13 @@ pub enum BlockState{
     OpenBBlock{hash_for_end:[u8;HASH_LEN],truncate_at:u64,errors:usize},
     ///Incomplete Start header.
     IncompleteStartHeader{truncate_at:u64},
+    ///This is only returned when we try to read a block start header that doesn't pass ECC
+    ///There is enough bytes so it is not incomplete, but it doesn't decode properly
+    ///During Recovery we should simply ignore this and consider it a 'false match'
+    ///This could happen if someone wrote the MAGIC_NUMBER and the correct ECC values as content somewhere.
+    ///So for adversarial reasons we should assume we accidentally matched 'noise' in the 'content'.
+    ///It *could* be a severely corrupted start header, but the idea is that ECC on our really short messages like headers should never be corrupted.
+    ProbablyNotStartHeader{start_from:u64},
     ///Data Corruption, ECC cannot recover original data.
     ///This hopefully never happens, as 'recovery' from here is complicated and not dealt with in this lib.
     DataCorruption{component_start:u64,is_b_block:bool,component_tag:ComponentTag}
