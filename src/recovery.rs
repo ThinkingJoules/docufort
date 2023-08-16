@@ -153,6 +153,7 @@ pub struct TailRecoverySummary{
 pub fn recover_tail<B:BlockInputs>(file_path: &std::path::Path) -> Result<TailRecoverySummary, ReadWriteError> {
     let mut file = OpenOptions::new().read(true).write(true).open(file_path)?;
     let original_file_len = file.metadata()?.len();
+    file.seek(SeekFrom::End(0))?;
     let mut file_ops = Vec::new();
     let mut tot_errors_corrected = 0;
     let mut error_correct_content = false;

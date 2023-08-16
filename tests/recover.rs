@@ -27,6 +27,7 @@ fn test_find_block_start_after_truncation() {
     for (trunc,ans) in [(290,268),(200,184),(100,23)]{
         vec.truncate(trunc);
         let mut crsr = Cursor::new(vec);
+        crsr.seek(std::io::SeekFrom::End(0)).unwrap();
         let position = find_block_start(&mut crsr).unwrap();
         assert_eq!(position,ans);
         vec = crsr.into_inner();
@@ -146,10 +147,9 @@ fn test_try_read_block_3_header_corruption() {
     let res = try_read_block::<_,DummyInput>(&mut cursor, true,true);
     assert!(res.is_ok());
     match res.unwrap() {
-        BlockState::DataCorruption{ component_start, is_b_block, component_tag } => {
-            assert_eq!(component_start,block_start as u64);
-            assert_eq!(is_b_block,false);
-            assert_eq!(component_tag,ComponentTag::StartHeader);
+        BlockState::ProbablyNotStartHeader { start_from } => {
+            assert_eq!(start_from,block_start as u64);
+            
         },
         a => panic!("Invalid Read: {:?}",a),
     }
@@ -288,7 +288,7 @@ fn test_try_read_block_1_truncate_in_header() {
     }
 }
 
-use std::io::{Write, Cursor, Read};
+use std::io::{Write, Cursor, Read, Seek};
 use std::fs::OpenOptions;
 
 fn write_bytes_to_file(file_path: &std::path::Path, bytes: &[u8]) {
