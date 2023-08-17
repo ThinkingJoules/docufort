@@ -22,7 +22,9 @@ pub struct IntegrityCheckOk{
     ///These are all the content data segments that are not 'as written'
     ///They can either be corrupted and have no ECC or
     ///they can be corrupted beyond what ECC can do.
-    pub corrupted_segments: Vec<CorruptDataSegment>
+    pub corrupted_segments: Vec<CorruptDataSegment>,
+    ///Contains the block start position and the time stamp found there
+    pub block_times: Vec<(u64,[u8;8])>
     
 }
 #[derive(Debug)]
@@ -58,6 +60,7 @@ pub fn integrity_check_file<B: BlockInputs>(file_path: &std::path::Path) -> Resu
     let mut data_contents = 0;
     let mut num_blocks = 0;
     let mut corrupted_segments = Vec::new();
+    let mut block_times = Vec::new();
 
     if !verify_configs(&mut file)?{return Err(IntegrityErr::FileConfigMisMatch)}
     let mut last_state= None;
@@ -74,7 +77,7 @@ pub fn integrity_check_file<B: BlockInputs>(file_path: &std::path::Path) -> Resu
         let bs = try_read_block::<_, B>(&mut file, true,true)?;//if we get an error now, there is some non-integrity problem
         last_state = Some(bs);
         match last_state.as_ref().unwrap() {
-            BlockState::Closed(BlockReadSummary { errors_corrected: e, block,  corrupted_content_blocks,.. }) => {
+            BlockState::Closed(BlockReadSummary { errors_corrected: e, block,  corrupted_content_blocks, block_start, block_start_timestamp, .. }) => {
                 errors_corrected += e;
                 corrupted_segments.extend_from_slice(corrupted_content_blocks.as_slice());
                 match block {
@@ -82,7 +85,7 @@ pub fn integrity_check_file<B: BlockInputs>(file_path: &std::path::Path) -> Resu
                     Block::B { middle, .. } => middle.iter().for_each(|(_,c)|data_contents+=c.data_len as u64),
                 }
                 num_blocks += 1;
-
+                block_times.push((*block_start,*block_start_timestamp))
                 // let BlockEnd { hash, .. } = block.clone().take_end();
                 // assert_eq!(&hash_as_read[..],hash.hash());//impl assertion since we are error correcting every block
             },
@@ -114,6 +117,7 @@ pub fn integrity_check_file<B: BlockInputs>(file_path: &std::path::Path) -> Resu
         data_contents,
         num_blocks,
         file_len_checked: file_len,
-        corrupted_segments
+        corrupted_segments,
+        block_times
     })
 }

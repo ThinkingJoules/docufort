@@ -64,7 +64,7 @@ fn test_integrity_recovery_clean() {
         data_contents, 
         num_blocks, 
         file_len_checked, 
-        corrupted_segments 
+        corrupted_segments, .. 
     } = summary;
     assert_eq!(errors_corrected, 0);
     assert_eq!(num_blocks, 3);
@@ -88,7 +88,7 @@ fn test_integrity_recovery_trailing_truncate() {
         data_contents, 
         num_blocks, 
         file_len_checked, 
-        corrupted_segments 
+        corrupted_segments , .. 
     } = summary;
     assert_eq!(errors_corrected, 0);
     assert_eq!(num_blocks, 3);
@@ -114,7 +114,7 @@ fn test_integrity_recovery_open_a_data() {
         data_contents, 
         num_blocks, 
         file_len_checked, 
-        corrupted_segments 
+        corrupted_segments , .. 
     } = summary;
     assert_eq!(errors_corrected, 0);
     assert_eq!(num_blocks, 2);
@@ -140,7 +140,7 @@ fn test_integrity_recovery_open_a_header() {
         data_contents, 
         num_blocks, 
         file_len_checked, 
-        corrupted_segments 
+        corrupted_segments , .. 
     } = summary;
     assert_eq!(errors_corrected, 0);
     assert_eq!(num_blocks, 2);
@@ -167,7 +167,7 @@ fn test_integrity_recovery_open_b() {
         data_contents, 
         num_blocks, 
         file_len_checked, 
-        corrupted_segments 
+        corrupted_segments , .. 
     } = summary;
     assert_eq!(errors_corrected, 0);
     assert_eq!(num_blocks, 0);
@@ -198,7 +198,7 @@ fn test_integrity_test_recovery_ecc_block_3_data() {
         data_contents, 
         num_blocks, 
         file_len_checked, 
-        corrupted_segments 
+        corrupted_segments , .. 
     } = summary;
     assert_eq!(errors_corrected, 2);
     assert_eq!(num_blocks, 3);
@@ -228,7 +228,7 @@ fn test_integrity_test_recovery_ecc_block_3_header() {
         data_contents, 
         num_blocks, 
         file_len_checked, 
-        corrupted_segments 
+        corrupted_segments , .. 
     } = summary;
     assert_eq!(errors_corrected, 2);
     assert_eq!(num_blocks, 3);
@@ -262,7 +262,7 @@ fn test_integrity_test_recovery_open_3_corrupt_2() {
         data_contents, 
         num_blocks, 
         file_len_checked, 
-        corrupted_segments 
+        corrupted_segments , .. 
     } = summary;
     assert_eq!(errors_corrected, 0);
     assert_eq!(num_blocks, 2);
@@ -298,7 +298,7 @@ fn test_integrity_test_recovery_open_2_corrupt_1() {
         data_contents, 
         num_blocks, 
         file_len_checked, 
-        corrupted_segments 
+        corrupted_segments , .. 
     } = summary;
     assert_eq!(errors_corrected, 0);
     assert_eq!(num_blocks, 1);
