@@ -88,13 +88,6 @@ impl<B> TailState<B> {
     }
 }
 
-#[cfg(not(test))]
-fn tie_break_stamp(created:&mut [u8;8],given:&[u8;8]) {
-    if created == given {
-        created[1] = created[1].overflowing_sub(1).0;
-    }
-}
-
 ///The file Read, assumes it is positioned where this function last left it, and the tailstate is the same as what this function returns.
 pub fn perform_file_op<RWS, T, B>(
     file: &mut RWS,
@@ -119,7 +112,7 @@ where
             )
         },
         (TailState::OpenBBlock { hasher }, Op::AtomicWrite(t)) => {
-            let time_stamp = time_stamp.unwrap_or_else(||B::current_timestamp(0));
+            let time_stamp = time_stamp.unwrap_or_else(||B::current_timestamp());
             let data_len = t.as_ref().len() as u32;
             (
                 TailState::ClosedBlock,
@@ -136,7 +129,7 @@ where
             )
         },
         (TailState::OpenBBlock { hasher }, Op::ContentWrite(t)) => {
-            let time_stamp = time_stamp.unwrap_or_else(||B::current_timestamp(0));
+            let time_stamp = time_stamp.unwrap_or_else(||B::current_timestamp());
             let data_len = t.as_ref().len() as u32;
             (
                 TailState::OpenBBlock { hasher:B::new() },
@@ -152,7 +145,7 @@ where
             return Ok(clean)
         },
         (clean, Op::AtomicWrite(t)) =>{
-            let time_stamp = time_stamp.unwrap_or_else(||B::current_timestamp(0));
+            let time_stamp = time_stamp.unwrap_or_else(||B::current_timestamp());
             let data_len = t.as_ref().len() as u32;
             let ops = vec![
                 if clean.is_closed() { Some(InnerOp::WriteMagicNumber) } else { None },
@@ -164,12 +157,11 @@ where
             (TailState::ClosedBlock,ops)
         },
         (clean, Op::ContentWrite(t)) =>  {
-            let (mut s_stamp,c_stamp) = if let Some(ts) = time_stamp {
-                (B::current_timestamp(0),ts)   
+            let (s_stamp,c_stamp) = if let Some(ts) = time_stamp {
+                (B::current_timestamp(),ts)   
             }else{
-                (B::current_timestamp(0),B::current_timestamp(0))
+                (B::current_timestamp(),B::current_timestamp())
             };
-            tie_break_stamp(&mut s_stamp, &c_stamp);
             let data_len = t.as_ref().len() as u32;
             let ops = vec![
                 if clean.is_closed() { Some(InnerOp::WriteMagicNumber) } else { None },
@@ -269,7 +261,7 @@ where
         },
         InnerOp::WriteEndHeader { time_stamp, hasher } => {
             let tag = BlockTag::EndBlock as u8;
-            let time_stamp = time_stamp.unwrap_or_else(||B::current_timestamp(0));
+            let time_stamp = time_stamp.unwrap_or_else(||B::current_timestamp());
             let header = ComponentHeader::new_from_parts(tag, time_stamp, None);
             if let Err(e) = write_header(file,&header) {
                 return Err((InnerOperation{ inner:InnerOp::WriteEndHeader { time_stamp:Some(time_stamp), hasher }, start_offset:Some(start_offset) },e))
@@ -288,10 +280,6 @@ where
 
 }
 
-#[cfg(test)]
-fn tie_break_stamp(_created:&mut [u8;8],_given:&[u8;8]) {
-    ()
-}
 #[cfg(test)]
 mod test_super {
     use super::*;
@@ -317,7 +305,7 @@ mod test_super {
             result
         }
     
-        fn current_timestamp(_:u8) -> [u8; 8] {
+        fn current_timestamp() -> [u8; 8] {
             [7, 6, 5, 4, 3, 2, 1, 0]
         }
     }
@@ -340,7 +328,7 @@ mod test_super {
     
         // Write BlockStart for Best Effort Block
         if log_pos {println!("BLOCK START: {}",cursor.position())};
-        let b_block_header = ComponentHeader::new_from_parts(BlockTag::StartBBlock as u8, DummyInput::current_timestamp(0), None);
+        let b_block_header = ComponentHeader::new_from_parts(BlockTag::StartBBlock as u8, DummyInput::current_timestamp(), None);
         write_header(&mut cursor, &b_block_header).unwrap();
     
         // Write 3 Content Components
@@ -355,7 +343,7 @@ mod test_super {
     
     
         let b_block_hash = hasher.finalize();
-        let block_end_header = ComponentHeader::new_from_parts(BlockTag::EndBlock as u8, DummyInput::current_timestamp(0), None);
+        let block_end_header = ComponentHeader::new_from_parts(BlockTag::EndBlock as u8, DummyInput::current_timestamp(), None);
         write_block_end(&mut cursor, &block_end_header, &b_block_hash).unwrap();
         
         if log_pos {println!("MN START: {}",cursor.position())};
@@ -379,11 +367,11 @@ mod test_super {
         init_file(&mut cursor).unwrap();
 
         let ops = [
-            Operation{ op:Op::ContentWrite(B_CONTENT.to_vec()), time_stamp: Some(DummyInput::current_timestamp(0)), calc_ecc: false },
-            Operation{ op:Op::ContentWrite(B_CONTENT.to_vec()), time_stamp: Some(DummyInput::current_timestamp(0)), calc_ecc: true },
-            Operation{ op:Op::ContentWrite(B_CONTENT.to_vec()), time_stamp: Some(DummyInput::current_timestamp(0)), calc_ecc: false },
-            Operation{ op:Op::AtomicWrite(A_CONTENT.to_vec()), time_stamp: Some(DummyInput::current_timestamp(0)), calc_ecc: false },
-            Operation{ op:Op::AtomicWrite(A_CONTENT.to_vec()), time_stamp: Some(DummyInput::current_timestamp(0)), calc_ecc: true },
+            Operation{ op:Op::ContentWrite(B_CONTENT.to_vec()), time_stamp: Some(DummyInput::current_timestamp()), calc_ecc: false },
+            Operation{ op:Op::ContentWrite(B_CONTENT.to_vec()), time_stamp: Some(DummyInput::current_timestamp()), calc_ecc: true },
+            Operation{ op:Op::ContentWrite(B_CONTENT.to_vec()), time_stamp: Some(DummyInput::current_timestamp()), calc_ecc: false },
+            Operation{ op:Op::AtomicWrite(A_CONTENT.to_vec()), time_stamp: Some(DummyInput::current_timestamp()), calc_ecc: false },
+            Operation{ op:Op::AtomicWrite(A_CONTENT.to_vec()), time_stamp: Some(DummyInput::current_timestamp()), calc_ecc: true },
         ];
         let mut tail_state: TailState<DummyInput> = TailState::ClosedBlock;
         for oper in ops {

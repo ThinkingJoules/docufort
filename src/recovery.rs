@@ -209,7 +209,7 @@ pub fn recover_tail<B:BlockInputs>(file_path: &std::path::Path) -> Result<TailRe
                 //then we could just buffer update to get the hash to avoid a large allocation.
                 file.set_len(*truncate_at_then_close_block)?;
                 file.seek(SeekFrom::End(0))?;
-                let time_stamp = B::current_timestamp(0);
+                let time_stamp = B::current_timestamp();
                 let header = ComponentHeader::new_from_parts(BlockTag::EndBlock as u8, time_stamp, None);
                 write_block_end(&mut file, &header, &hash_for_end)?;
                 continue; //should end in a closed block

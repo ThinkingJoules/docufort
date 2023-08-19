@@ -161,9 +161,6 @@ pub trait BlockInputs:Clone {
     fn finalize(&self) -> [u8; HASH_LEN];
     ///Used to return the timestamp that all block messages carry.
     ///Does not need to be a timestamp, but must be 8 bytes
-    ///The thread_id can be used to &= the lowest bits to be unique per thread
-    ///It is implementation specific.
-    ///This lib will always use thread_id 0;
-    fn current_timestamp(thread_id:u8) -> [u8;8];
+    fn current_timestamp() -> [u8;8];
 }
 
