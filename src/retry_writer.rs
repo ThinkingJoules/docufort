@@ -25,11 +25,15 @@ use crate::{core::{BlockInputs, ComponentHeader}, write::{write_magic_number, wr
 pub enum Op<T:AsRef<[u8]>> {
     CloseBlock,
     AtomicWrite(T),
-    ContentWrite(T),
+    ///This timestamp is for the content header.
+    ///If a BlockStart needs to be written then it's timestamp will come from the Operation
+    ContentWrite(T,Option<[u8;8]>),
 }
 pub struct Operation<T:AsRef<[u8]>>{
     pub op:Op<T>,
-    pub time_stamp:Option<[u8;8]>,
+    ///This is basically always the header for the Op.
+    ///If the Op is ContentWrite, then this is 'BlockStart'
+    pub timestamp:Option<[u8;8]>,
     pub calc_ecc:bool
 }
 
@@ -100,7 +104,7 @@ where
     T: AsRef<[u8]>+Debug,
     B: BlockInputs+Debug,
 {    
-    let Operation { op, time_stamp, calc_ecc } = oper;
+    let Operation { op, timestamp: time_stamp, calc_ecc } = oper;
     let (tail_state,inner_ops) = match (tail,op) {
         (TailState::OpenBBlock { hasher }, Op::CloseBlock) => {
             (
@@ -128,7 +132,7 @@ where
                 ]
             )
         },
-        (TailState::OpenBBlock { hasher }, Op::ContentWrite(t)) => {
+        (TailState::OpenBBlock { hasher }, Op::ContentWrite(t,_)) => {
             let time_stamp = time_stamp.unwrap_or_else(||B::current_timestamp());
             let data_len = t.as_ref().len() as u32;
             (
@@ -156,12 +160,8 @@ where
             ].into_iter().filter_map(|x| x).collect::<Vec<_>>();
             (TailState::ClosedBlock,ops)
         },
-        (clean, Op::ContentWrite(t)) =>  {
-            let (s_stamp,c_stamp) = if let Some(ts) = time_stamp {
-                (B::current_timestamp(),ts)   
-            }else{
-                (B::current_timestamp(),B::current_timestamp())
-            };
+        (clean, Op::ContentWrite(t,content_timestamp)) =>  {
+            let (s_stamp,c_stamp) = (time_stamp.unwrap_or_else(B::current_timestamp),content_timestamp.unwrap_or_else(B::current_timestamp));
             let data_len = t.as_ref().len() as u32;
             let ops = vec![
                 if clean.is_closed() { Some(InnerOp::WriteMagicNumber) } else { None },
@@ -367,11 +367,11 @@ mod test_super {
         init_file(&mut cursor).unwrap();
 
         let ops = [
-            Operation{ op:Op::ContentWrite(B_CONTENT.to_vec()), time_stamp: Some(DummyInput::current_timestamp()), calc_ecc: false },
-            Operation{ op:Op::ContentWrite(B_CONTENT.to_vec()), time_stamp: Some(DummyInput::current_timestamp()), calc_ecc: true },
-            Operation{ op:Op::ContentWrite(B_CONTENT.to_vec()), time_stamp: Some(DummyInput::current_timestamp()), calc_ecc: false },
-            Operation{ op:Op::AtomicWrite(A_CONTENT.to_vec()), time_stamp: Some(DummyInput::current_timestamp()), calc_ecc: false },
-            Operation{ op:Op::AtomicWrite(A_CONTENT.to_vec()), time_stamp: Some(DummyInput::current_timestamp()), calc_ecc: true },
+            Operation{ op:Op::ContentWrite(B_CONTENT.to_vec(),None), timestamp: Some(DummyInput::current_timestamp()), calc_ecc: false },
+            Operation{ op:Op::ContentWrite(B_CONTENT.to_vec(),None), timestamp: Some(DummyInput::current_timestamp()), calc_ecc: true },
+            Operation{ op:Op::ContentWrite(B_CONTENT.to_vec(),None), timestamp: Some(DummyInput::current_timestamp()), calc_ecc: false },
+            Operation{ op:Op::AtomicWrite(A_CONTENT.to_vec()), timestamp: Some(DummyInput::current_timestamp()), calc_ecc: false },
+            Operation{ op:Op::AtomicWrite(A_CONTENT.to_vec()), timestamp: Some(DummyInput::current_timestamp()), calc_ecc: true },
         ];
         let mut tail_state: TailState<DummyInput> = TailState::ClosedBlock;
         for oper in ops {
