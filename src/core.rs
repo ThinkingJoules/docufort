@@ -159,8 +159,8 @@ pub trait BlockInputs:Clone {
     fn update(&mut self, data: &[u8]);
     ///Return hash from hasher
     fn finalize(&self) -> [u8; HASH_LEN];
-    ///Used to return the timestamp that all block messages carry.
-    ///Does not need to be a timestamp, but must be 8 bytes
-    fn current_timestamp() -> [u8;8];
+    ///Used to return the timestamp that all headers carry.
+    ///This is stored as big endian in headers so direct byte comparison works.
+    fn current_timestamp() -> u64;
 }
 

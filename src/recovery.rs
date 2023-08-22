@@ -210,7 +210,7 @@ pub fn recover_tail<B:BlockInputs>(file_path: &std::path::Path) -> Result<TailRe
                 file.set_len(*truncate_at_then_close_block)?;
                 file.seek(SeekFrom::End(0))?;
                 let time_stamp = B::current_timestamp();
-                let header = ComponentHeader::new_from_parts(BlockTag::EndBlock as u8, time_stamp, None);
+                let header = ComponentHeader::new_from_parts(BlockTag::EndBlock as u8, time_stamp.to_be_bytes(), None);
                 write_block_end(&mut file, &header, &hash_for_end)?;
                 continue; //should end in a closed block
             },

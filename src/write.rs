@@ -115,7 +115,7 @@ pub fn write_header<W: std::io::Write>(writer: &mut W,header:&ComponentHeader)->
 ///Calculates ECC and Writes the header to the given writer.
 pub fn write_content_header<W: std::io::Write, B:BlockInputs>(writer: &mut W,data_len:u32,has_ecc:bool,time_stamp: Option<[u8;8]>,hasher:&mut B)->Result<(),ReadWriteError>{
     let tag = if has_ecc {BlockTag::CEComponent as u8}else{BlockTag::CComponent as u8};
-    let time_stamp = if let Some(ts) = time_stamp {ts}else{B::current_timestamp()};
+    let time_stamp = if let Some(ts) = time_stamp {ts}else{B::current_timestamp().to_be_bytes()};
     let content_header = ComponentHeader::new_from_parts(tag, time_stamp, Some(data_len));
     let mut ha = HashAdapter::new(writer, hasher);
     use std::io::Write;
@@ -161,7 +161,7 @@ pub fn write_atomic_block<W: std::io::Write,B:BlockInputs>(writer: &mut W,start_
     let mut h = B::new();
     let tag = if calc_ecc {BlockTag::StartAEBlock}else{BlockTag::StartABlock};
     let data = content.len() as u32;
-    let time_stamp = start_time_stamp.unwrap_or_else(||B::current_timestamp());
+    let time_stamp = start_time_stamp.unwrap_or_else(||B::current_timestamp().to_be_bytes());
     let header = ComponentHeader::new_from_parts(tag as u8,time_stamp , Some(data));
     write_header(writer, &header)?;   
     write_content(writer, content, calc_ecc, &mut h)?;
@@ -172,7 +172,7 @@ pub fn write_atomic_block<W: std::io::Write,B:BlockInputs>(writer: &mut W,start_
     }else{
         let tag = BlockTag::EndBlock;
         let data = None;
-        let time_stamp = B::current_timestamp();
+        let time_stamp = B::current_timestamp().to_be_bytes();
         let header = ComponentHeader::new_from_parts(tag as u8,time_stamp , data);
         write_block_end(writer, &header, &hash)?;
     }
@@ -202,7 +202,7 @@ mod test_super {
             self.0.finalize().as_bytes()[0..HASH_LEN].try_into().unwrap()
         }
 
-        fn current_timestamp() -> [u8;8] {
+        fn current_timestamp() -> u64 {
             unimplemented!()
         }
     }
