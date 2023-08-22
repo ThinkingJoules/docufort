@@ -8,7 +8,7 @@ use crate::{core::{BlockState, BlockInputs, Block, Content}, read::read_magic_nu
 ///This does no ECC on anything.
 /// 
 ///It is recommended to run integrity check on startup and provide a start_hint for the first block we want content from.
-pub fn find_content<B:BlockInputs,T:RangeBounds<[u8;8]>>(file_path: &std::path::Path, start_hint: Option<u64>,range:Option<T>) -> Result<Vec<([u8;8],Content)>, ReadWriteError> {
+pub fn find_content<B:BlockInputs,T:RangeBounds<u64>>(file_path: &std::path::Path, start_hint: Option<u64>,range:Option<T>) -> Result<Vec<([u8;8],Content)>, ReadWriteError> {
     let mut file = OpenOptions::new().read(true).open(file_path)?;
     let mut content = Vec::new();
     if let Some(s) = start_hint {
@@ -16,6 +16,20 @@ pub fn find_content<B:BlockInputs,T:RangeBounds<[u8;8]>>(file_path: &std::path::
     }else{
         file.seek(SeekFrom::Start(FILE_HEADER_LEN as u64 + MAGIC_NUMBER.len() as u64 + ECC_LEN as u64))?;//first block start
     }
+
+    let range =range.map(|u|{
+        match (u.start_bound(),u.end_bound()){
+            (std::ops::Bound::Included(a), std::ops::Bound::Included(b)) => a.to_be_bytes()..=b.to_be_bytes(),
+            (std::ops::Bound::Included(a), std::ops::Bound::Excluded(b)) => a.to_be_bytes()..=(b-1).to_be_bytes(),
+            (std::ops::Bound::Included(a), std::ops::Bound::Unbounded) =>a.to_be_bytes()..=u64::MAX.to_be_bytes(),
+            (std::ops::Bound::Excluded(a), std::ops::Bound::Included(b)) => (a+1).to_be_bytes()..=b.to_be_bytes(),
+            (std::ops::Bound::Excluded(a), std::ops::Bound::Excluded(b)) => (a+1).to_be_bytes()..=(b-1).to_be_bytes(),
+            (std::ops::Bound::Excluded(a), std::ops::Bound::Unbounded) => (a+1).to_be_bytes()..=u64::MAX.to_be_bytes(),
+            (std::ops::Bound::Unbounded, std::ops::Bound::Included(b)) => 0u64.to_be_bytes()..=b.to_be_bytes(),
+            (std::ops::Bound::Unbounded, std::ops::Bound::Excluded(b)) => 0u64.to_be_bytes()..=(b-1).to_be_bytes(),
+            (std::ops::Bound::Unbounded, std::ops::Bound::Unbounded) => 0u64.to_be_bytes()..=u64::MAX.to_be_bytes(),
+        }
+    });
 
     //we read from where we are. if there is a range we only capture if it is in range
     //if we are less than range, we proceed

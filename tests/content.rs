@@ -40,7 +40,7 @@ fn test_find_content_clean() {
     let cursor = generate_test_file();
     let file_content = cursor.into_inner();
     write_bytes_to_file(&path, &file_content);
-    let summary = find_content::<DummyInput,_>(&path,None,Some([7, 6, 5, 4, 3, 2, 1, 0]..)).unwrap();
+    let summary = find_content::<DummyInput,_>(&path,None,Some(u64::from_be_bytes([7, 6, 5, 4, 3, 2, 1, 0])..)).unwrap();
     cleanup_test_file(path);
     assert_eq!(summary.len(),5);
 }
@@ -51,7 +51,7 @@ fn test_find_content_trailing_truncate() {
     let mut file_content = cursor.into_inner();
     file_content.extend_from_slice(&MAGIC_NUMBER);
     write_bytes_to_file(&path, &file_content);
-    let summary = find_content::<DummyInput,_>(&path,None,Some([7, 6, 5, 4, 3, 2, 1, 0]..)).unwrap();
+    let summary = find_content::<DummyInput,_>(&path,None,Some(u64::from_be_bytes([7, 6, 5, 4, 3, 2, 1, 0])..)).unwrap();
     cleanup_test_file(path);
     assert_eq!(summary.len(),5);
 }
@@ -64,7 +64,7 @@ fn test_find_content_open_a_data() {
     let new_len = block_start+HEADER_LEN+ECC_LEN+4;
     file_content.truncate(new_len);//part way through the data
     write_bytes_to_file(&path, &file_content);
-    let summary = find_content::<DummyInput,_>(&path,None,Some([7, 6, 5, 4, 3, 2, 1, 0]..)).unwrap();
+    let summary = find_content::<DummyInput,_>(&path,None,Some(u64::from_be_bytes([7, 6, 5, 4, 3, 2, 1, 0])..)).unwrap();
     cleanup_test_file(path);
     assert_eq!(summary.len(),4);
 }
@@ -77,7 +77,7 @@ fn test_find_content_open_a_header() {
     let new_len = block_start+HEADER_LEN+ECC_LEN-4;
     file_content.truncate(new_len);//part way through the data
     write_bytes_to_file(&path, &file_content);
-    let summary = find_content::<DummyInput,_>(&path,None,Some([7, 6, 5, 4, 3, 2, 1, 0]..)).unwrap();
+    let summary = find_content::<DummyInput,_>(&path,None,Some(u64::from_be_bytes([7, 6, 5, 4, 3, 2, 1, 0])..)).unwrap();
     cleanup_test_file(path);
     assert_eq!(summary.len(),4);
 }
@@ -90,7 +90,7 @@ fn test_find_content_open_b() {
     let new_len = block_start+HEADER_LEN*2+ECC_LEN*2+4;
     file_content.truncate(new_len);//part way through the data
     write_bytes_to_file(&path, &file_content);
-    let summary = find_content::<DummyInput,_>(&path,None,Some([7, 6, 5, 4, 3, 2, 1, 0]..)).unwrap();
+    let summary = find_content::<DummyInput,_>(&path,None,Some(u64::from_be_bytes([7, 6, 5, 4, 3, 2, 1, 0])..)).unwrap();
     cleanup_test_file(path);
     assert_eq!(summary.len(),0);
 }
@@ -106,7 +106,7 @@ fn test_find_content_ecc_block_3_data() {
     file_contents[content_start+2] ^= file_contents[content_start+2]; 
     assert_ne!(orig,file_contents);
     write_bytes_to_file(&path, &file_contents);
-    let summary = find_content::<DummyInput,_>(&path,None,Some([7, 6, 5, 4, 3, 2, 1, 0]..)).unwrap();
+    let summary = find_content::<DummyInput,_>(&path,None,Some(u64::from_be_bytes([7, 6, 5, 4, 3, 2, 1, 0])..)).unwrap();
     cleanup_test_file(path);
     assert_eq!(summary.len(),5);
 }
@@ -122,7 +122,7 @@ fn test_find_content_ecc_block_3_header() {
     file_contents[content_start+2] ^= file_contents[content_start+2]; 
     assert_ne!(orig,file_contents);
     write_bytes_to_file(&path, &file_contents);
-    let summary = find_content::<DummyInput,_>(&path,None,Some([7, 6, 5, 4, 3, 2, 1, 0]..)).unwrap();
+    let summary = find_content::<DummyInput,_>(&path,None,Some(u64::from_be_bytes([7, 6, 5, 4, 3, 2, 1, 0])..)).unwrap();
     cleanup_test_file(path);
     assert_eq!(summary.len(),5);
 }
@@ -142,7 +142,7 @@ fn test_find_content_open_3_corrupt_2() {
     file_contents[content_start+2] ^= file_contents[content_start+2]; 
     assert_ne!(orig,file_contents);
     write_bytes_to_file(&path, &file_contents);
-    let summary = find_content::<DummyInput,_>(&path,None,Some([7, 6, 5, 4, 3, 2, 1, 0]..)).unwrap();
+    let summary = find_content::<DummyInput,_>(&path,None,Some(u64::from_be_bytes([7, 6, 5, 4, 3, 2, 1, 0])..)).unwrap();
     cleanup_test_file(path);
     assert_eq!(summary.len(),4);
 }
@@ -161,7 +161,7 @@ fn test_find_content_open_2_corrupt_1() {
     file_contents[content_start1+2] ^= file_contents[content_start1+2]; 
     assert_ne!(orig,file_contents);
     write_bytes_to_file(&path, &file_contents);
-    let summary = find_content::<DummyInput,_>(&path,None,Some([7, 6, 5, 4, 3, 2, 1, 0]..)).unwrap();
+    let summary = find_content::<DummyInput,_>(&path,None,Some(u64::from_be_bytes([7, 6, 5, 4, 3, 2, 1, 0])..)).unwrap();
     cleanup_test_file(path);
     assert_eq!(summary.len(),3);
 }
