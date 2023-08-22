@@ -24,7 +24,7 @@ pub struct IntegrityCheckOk{
     ///they can be corrupted beyond what ECC can do.
     pub corrupted_segments: Vec<CorruptDataSegment>,
     ///Contains the block start position and the time stamp found there
-    pub block_times: Vec<(u64,[u8;8])>
+    pub block_times: Vec<(u64,u64)>
     
 }
 #[derive(Debug)]

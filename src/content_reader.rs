@@ -8,7 +8,7 @@ use crate::{core::{BlockState, BlockInputs, Block, Content}, read::read_magic_nu
 ///This does no ECC on anything.
 /// 
 ///It is recommended to run integrity check on startup and provide a start_hint for the first block we want content from.
-pub fn find_content<B:BlockInputs,T:RangeBounds<u64>>(file_path: &std::path::Path, start_hint: Option<u64>,range:Option<T>) -> Result<Vec<([u8;8],Content)>, ReadWriteError> {
+pub fn find_content<B:BlockInputs,T:RangeBounds<u64>>(file_path: &std::path::Path, start_hint: Option<u64>,range:Option<T>) -> Result<Vec<(u64,Content)>, ReadWriteError> {
     let mut file = OpenOptions::new().read(true).open(file_path)?;
     let mut content = Vec::new();
     if let Some(s) = start_hint {
@@ -101,5 +101,5 @@ pub fn find_content<B:BlockInputs,T:RangeBounds<u64>>(file_path: &std::path::Pat
         let res = read_magic_number(&mut file, false);
         if res.is_err(){break}
     }
-    Ok(content)
+    Ok(content.into_iter().map(|(ts,c)|(u64::from_be_bytes(ts),c)).collect())
 }

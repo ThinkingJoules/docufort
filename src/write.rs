@@ -113,9 +113,9 @@ pub fn write_header<W: std::io::Write>(writer: &mut W,header:&ComponentHeader)->
     Ok(())
 }
 ///Calculates ECC and Writes the header to the given writer.
-pub fn write_content_header<W: std::io::Write, B:BlockInputs>(writer: &mut W,data_len:u32,has_ecc:bool,time_stamp: Option<[u8;8]>,hasher:&mut B)->Result<(),ReadWriteError>{
+pub fn write_content_header<W: std::io::Write, B:BlockInputs>(writer: &mut W,data_len:u32,has_ecc:bool,time_stamp: Option<u64>,hasher:&mut B)->Result<(),ReadWriteError>{
     let tag = if has_ecc {BlockTag::CEComponent as u8}else{BlockTag::CComponent as u8};
-    let time_stamp = if let Some(ts) = time_stamp {ts}else{B::current_timestamp().to_be_bytes()};
+    let time_stamp = if let Some(ts) = time_stamp {ts.to_be_bytes()}else{B::current_timestamp().to_be_bytes()};
     let content_header = ComponentHeader::new_from_parts(tag, time_stamp, Some(data_len));
     let mut ha = HashAdapter::new(writer, hasher);
     use std::io::Write;
@@ -149,7 +149,7 @@ pub fn write_block_hash<W: std::io::Write>(writer: &mut W,hash:&[u8;HASH_LEN])->
 }
 
 ///Writes Header + Content Component, optionally computes ECC
-pub fn write_content_component<W: std::io::Write,B:BlockInputs>(writer: &mut W,calc_ecc:bool,time_stamp: Option<[u8;8]>,content:&[u8],hasher:&mut B)->Result<(),ReadWriteError>{
+pub fn write_content_component<W: std::io::Write,B:BlockInputs>(writer: &mut W,calc_ecc:bool,time_stamp: Option<u64>,content:&[u8],hasher:&mut B)->Result<(),ReadWriteError>{
     let data_len = content.len() as u32;
     write_content_header(writer, data_len,calc_ecc,time_stamp,hasher)?;
     write_content(writer, content, calc_ecc, hasher)?;
@@ -157,11 +157,11 @@ pub fn write_content_component<W: std::io::Write,B:BlockInputs>(writer: &mut W,c
 }
 
 ///Writes Header + Content Component, optionally computes ECC
-pub fn write_atomic_block<W: std::io::Write,B:BlockInputs>(writer: &mut W,start_time_stamp: Option<[u8;8]>,content:&[u8],calc_ecc:bool,end_block:Option<&ComponentHeader>)->Result<(),ReadWriteError>{
+pub fn write_atomic_block<W: std::io::Write,B:BlockInputs>(writer: &mut W,start_time_stamp: Option<u64>,content:&[u8],calc_ecc:bool,end_block:Option<&ComponentHeader>)->Result<(),ReadWriteError>{
     let mut h = B::new();
     let tag = if calc_ecc {BlockTag::StartAEBlock}else{BlockTag::StartABlock};
     let data = content.len() as u32;
-    let time_stamp = start_time_stamp.unwrap_or_else(||B::current_timestamp().to_be_bytes());
+    let time_stamp = start_time_stamp.unwrap_or_else(||B::current_timestamp()).to_be_bytes();
     let header = ComponentHeader::new_from_parts(tag as u8,time_stamp , Some(data));
     write_header(writer, &header)?;   
     write_content(writer, content, calc_ecc, &mut h)?;
@@ -281,7 +281,7 @@ mod test_super {
     #[test]
     fn test_write_a_block_no_ecc() {
         let mut writer = Cursor::new(Vec::new());
-        let start_time_stamp = [1u8;8];
+        let start_time_stamp = u64::from_be_bytes([1u8;8]);
         let end_time_stamp = [2u8;8];
         let content = &[1u8,2,3,4,5,6,7,8,9,0];
         let end_block = ComponentHeader::new_from_parts(BlockTag::EndBlock as u8, end_time_stamp, None);
@@ -300,7 +300,7 @@ mod test_super {
     #[test]
     fn test_write_a_block_ecc() {
         let mut writer = Cursor::new(Vec::new());
-        let start_time_stamp = [1u8;8];
+        let start_time_stamp = u64::from_be_bytes([1u8;8]);
         let end_time_stamp = [2u8;8];
         let content = &[1u8,2,3,4,5,6,7,8,9,0];
         let end_block = ComponentHeader::new_from_parts(BlockTag::EndBlock as u8, end_time_stamp, None);

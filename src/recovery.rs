@@ -16,7 +16,7 @@ pub struct BlockReadSummary{
     pub errors_corrected:usize,
     pub block:Block,
     pub block_start:u64,
-    pub block_start_timestamp:[u8;8],
+    pub block_start_timestamp:u64,
     pub hash_as_read:[u8;HASH_LEN],
     pub corrupted_content_blocks:Vec<CorruptDataSegment>
 }
@@ -103,7 +103,7 @@ pub fn try_read_block<RW:std::io::Write + std::io::Read + std::io::Seek,B:BlockI
                     corrupted_content_blocks.push(CorruptDataSegment::Corrupt{ data_start, data_len });
                 }
                 let end = BlockEnd{ header, hash };
-                let brs = BlockReadSummary { hash_as_read,errors_corrected, block_start,block_start_timestamp:start.time_stamp(),corrupted_content_blocks, block: Block::A { start, middle: content, end }};
+                let brs = BlockReadSummary { hash_as_read,errors_corrected, block_start,block_start_timestamp:u64::from_be_bytes(start.time_stamp()),corrupted_content_blocks, block: Block::A { start, middle: content, end }};
                 Ok(BlockState::Closed(brs))
             }else{
                 Ok(BlockState::InvalidBlockStructure {end_of_last_good_component:block_start, info: "Did not find BlockEnd at correct position".to_string() })
@@ -113,7 +113,7 @@ pub fn try_read_block<RW:std::io::Write + std::io::Read + std::io::Seek,B:BlockI
             match read_block_middle::<_,B>(reader_writer,error_correct_header,error_correct_content){
                 Ok(BlockMiddleState::BBlock { middle, end, errors_corrected:ec, hash, corrupted_content_blocks }) => {
                     errors_corrected += ec;
-                    let brs = BlockReadSummary { hash_as_read:hash,errors_corrected, block_start, block_start_timestamp:start.time_stamp(), block: Block::B { start, middle, end }, corrupted_content_blocks };
+                    let brs = BlockReadSummary { hash_as_read:hash,errors_corrected, block_start, block_start_timestamp:u64::from_be_bytes(start.time_stamp()), block: Block::B { start, middle, end }, corrupted_content_blocks };
                     Ok(BlockState::Closed(brs))
                 },
                 Ok(BlockMiddleState::InvalidBlockStructure { last_good_component_end }) => {

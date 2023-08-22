@@ -27,13 +27,13 @@ pub enum Op<T:AsRef<[u8]>> {
     AtomicWrite(T),
     ///This timestamp is for the content header.
     ///If a BlockStart needs to be written then it's timestamp will come from the Operation
-    ContentWrite(T,Option<[u8;8]>),
+    ContentWrite(T,Option<u64>),
 }
 pub struct Operation<T:AsRef<[u8]>>{
     pub op:Op<T>,
     ///This is basically always the header for the Op.
     ///If the Op is ContentWrite, then this is 'BlockStart'
-    pub timestamp:Option<[u8;8]>,
+    pub timestamp:Option<u64>,
     pub calc_ecc:bool
 }
 
@@ -42,7 +42,7 @@ enum InnerOp<T:AsRef<[u8]>,B:BlockInputs> {
     WriteMagicNumber,
     WriteABlockStart{data_len:u32,time_stamp:[u8;8],calc_ecc:bool},
     WriteBBlockStart{time_stamp:[u8;8]},
-    WriteContentHeader{data_len:u32,time_stamp:[u8;8],calc_ecc:bool,hasher:Option<B>},
+    WriteContentHeader{data_len:u32,time_stamp:u64,calc_ecc:bool,hasher:Option<B>},
     WriteContent(T,Option<B>,bool),
     WriteEndHeader{time_stamp:Option<[u8;8]>,hasher:Option<B>},
     WriteHash(Option<B>)
@@ -104,19 +104,20 @@ where
     T: AsRef<[u8]>+Debug,
     B: BlockInputs+Debug,
 {    
-    let Operation { op, timestamp: time_stamp, calc_ecc } = oper;
+    let Operation { op, timestamp, calc_ecc } = oper;
+    //let time_stamp = timestamp.map(|u|u.to_be_bytes());
     let (tail_state,inner_ops) = match (tail,op) {
         (TailState::OpenBBlock { hasher }, Op::CloseBlock) => {
             (
                 TailState::ClosedBlock,
                 vec![
-                    InnerOp::WriteEndHeader {time_stamp, hasher: None},
+                    InnerOp::WriteEndHeader {time_stamp:timestamp.map(|u|u.to_be_bytes()), hasher: None},
                     InnerOp::WriteHash(Some(hasher)),
                 ]
             )
         },
         (TailState::OpenBBlock { hasher }, Op::AtomicWrite(t)) => {
-            let time_stamp = time_stamp.unwrap_or_else(||B::current_timestamp().to_be_bytes());
+            let time_stamp = timestamp.unwrap_or_else(B::current_timestamp).to_be_bytes();
             let data_len = t.as_ref().len() as u32;
             (
                 TailState::ClosedBlock,
@@ -133,7 +134,7 @@ where
             )
         },
         (TailState::OpenBBlock { hasher }, Op::ContentWrite(t,_)) => {
-            let time_stamp = time_stamp.unwrap_or_else(||B::current_timestamp().to_be_bytes());
+            let time_stamp = timestamp.unwrap_or_else(B::current_timestamp);
             let data_len = t.as_ref().len() as u32;
             (
                 TailState::OpenBBlock { hasher:B::new() },
@@ -149,7 +150,7 @@ where
             return Ok(clean)
         },
         (clean, Op::AtomicWrite(t)) =>{
-            let time_stamp = time_stamp.unwrap_or_else(||B::current_timestamp().to_be_bytes());
+            let time_stamp = timestamp.unwrap_or_else(B::current_timestamp).to_be_bytes();
             let data_len = t.as_ref().len() as u32;
             let ops = vec![
                 if clean.is_closed() { Some(InnerOp::WriteMagicNumber) } else { None },
@@ -161,7 +162,7 @@ where
             (TailState::ClosedBlock,ops)
         },
         (clean, Op::ContentWrite(t,content_timestamp)) =>  {
-            let (s_stamp,c_stamp) = (time_stamp.unwrap_or_else(|| B::current_timestamp().to_be_bytes()),content_timestamp.unwrap_or_else(|| B::current_timestamp().to_be_bytes()));
+            let (s_stamp,c_stamp) = (timestamp.unwrap_or_else(B::current_timestamp).to_be_bytes(),content_timestamp.unwrap_or_else(B::current_timestamp));
             let data_len = t.as_ref().len() as u32;
             let ops = vec![
                 if clean.is_closed() { Some(InnerOp::WriteMagicNumber) } else { None },
@@ -367,11 +368,11 @@ mod test_super {
         init_file(&mut cursor).unwrap();
 
         let ops = [
-            Operation{ op:Op::ContentWrite(B_CONTENT.to_vec(),None), timestamp: Some(DummyInput::current_timestamp().to_be_bytes()), calc_ecc: false },
-            Operation{ op:Op::ContentWrite(B_CONTENT.to_vec(),None), timestamp: Some(DummyInput::current_timestamp().to_be_bytes()), calc_ecc: true },
-            Operation{ op:Op::ContentWrite(B_CONTENT.to_vec(),None), timestamp: Some(DummyInput::current_timestamp().to_be_bytes()), calc_ecc: false },
-            Operation{ op:Op::AtomicWrite(A_CONTENT.to_vec()), timestamp: Some(DummyInput::current_timestamp().to_be_bytes()), calc_ecc: false },
-            Operation{ op:Op::AtomicWrite(A_CONTENT.to_vec()), timestamp: Some(DummyInput::current_timestamp().to_be_bytes()), calc_ecc: true },
+            Operation{ op:Op::ContentWrite(B_CONTENT.to_vec(),None), timestamp: Some(DummyInput::current_timestamp()), calc_ecc: false },
+            Operation{ op:Op::ContentWrite(B_CONTENT.to_vec(),None), timestamp: Some(DummyInput::current_timestamp()), calc_ecc: true },
+            Operation{ op:Op::ContentWrite(B_CONTENT.to_vec(),None), timestamp: Some(DummyInput::current_timestamp()), calc_ecc: false },
+            Operation{ op:Op::AtomicWrite(A_CONTENT.to_vec()), timestamp: Some(DummyInput::current_timestamp()), calc_ecc: false },
+            Operation{ op:Op::AtomicWrite(A_CONTENT.to_vec()), timestamp: Some(DummyInput::current_timestamp()), calc_ecc: true },
         ];
         let mut tail_state: TailState<DummyInput> = TailState::ClosedBlock;
         for oper in ops {
