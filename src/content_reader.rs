@@ -64,6 +64,24 @@ pub fn find_content<B:BlockInputs,T:RangeBounds<[u8;8]>>(file_path: &std::path::
                     },
                 }
             },
+            BlockState::OpenBBlock { content:middle, .. } => {
+                for (s,m) in middle {
+                    let start_time = s.time_stamp();
+                    if let Some(r) = range.as_ref() {
+                        if r.contains(&start_time){
+                            content.push((start_time,m))
+                        }else {
+                            match r.end_bound(){
+                                std::ops::Bound::Included(x) if &start_time > x => break 'outer,
+                                std::ops::Bound::Excluded(x) if &start_time >= x => break 'outer,
+                                _ => (),
+                            }
+                        }
+                    }else{
+                        content.push((start_time,m))
+                    }
+                }
+            }
             _ => break,
         }
         let res = read_magic_number(&mut file, false);

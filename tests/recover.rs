@@ -261,7 +261,7 @@ fn test_try_read_block_1_truncate_in_data() {
     let res = try_read_block::<_,DummyInput>(&mut cursor, true,true);
     assert!(res.is_ok());
     match res.unwrap() {
-        BlockState::OpenBBlock { truncate_at, hash_for_end, errors } => {
+        BlockState::OpenBBlock { truncate_at, hash_for_end, errors ,..} => {
             //This leaves no content, but that is technically a valid B Block.
             assert_eq!(truncate_at,(block_start+HEADER_LEN+ECC_LEN) as u64);
             assert_eq!(hash_for_end,NULL_HASH);

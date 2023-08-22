@@ -120,8 +120,8 @@ pub fn try_read_block<RW:std::io::Write + std::io::Read + std::io::Seek,B:BlockI
                     Ok(BlockState::InvalidBlockStructure {end_of_last_good_component:last_good_component_end, info: "Found a BlockStart variant in a B Block".to_string() })
 
                 },
-                Ok(BlockMiddleState::UnexpectedEof { last_good_component_end, hash_at_last_good_component }) => {
-                    Ok(BlockState::OpenBBlock { truncate_at: last_good_component_end, errors: errors_corrected, hash_for_end:hash_at_last_good_component })
+                Ok(BlockMiddleState::UnexpectedEof { last_good_component_end, hash_at_last_good_component, content }) => {
+                    Ok(BlockState::OpenBBlock { truncate_at: last_good_component_end, errors: errors_corrected, hash_for_end:hash_at_last_good_component,content })
                 },
                 Ok(BlockMiddleState::DataCorruption { component_start, component_tag  }) => {
                     Ok(BlockState::DataCorruption { component_start, is_b_block: true,component_tag})
@@ -202,7 +202,7 @@ pub fn recover_tail<B:BlockInputs>(file_path: &std::path::Path) -> Result<TailRe
                     return Ok(TailRecoverySummary { original_file_len, recovered_file_len:crsr_pos, file_ops, has_blocks: true, tot_errors_corrected,corrupted_content_blocks })
                 }
             },
-            BlockState::OpenBBlock { truncate_at: truncate_at_then_close_block, errors, hash_for_end } => {
+            BlockState::OpenBBlock { truncate_at: truncate_at_then_close_block, errors, hash_for_end, .. } => {
                 tot_errors_corrected += errors;
                 //let truncation_amt = file.metadata()?.len() - truncate_at_then_close_block;
                 //how do we avoid allocating a really big vec? we would need to know when to start hashing, up to the truncate

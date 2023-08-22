@@ -184,7 +184,7 @@ pub fn buffer_hash<R:std::io::Read, B:BlockInputs>(reader:&mut R,mut num_bytes:u
 #[derive(Debug)]
 pub enum BlockMiddleState{
     InvalidBlockStructure{last_good_component_end:u64},
-    UnexpectedEof{last_good_component_end:u64,hash_at_last_good_component:[u8;HASH_LEN]},
+    UnexpectedEof{last_good_component_end:u64,hash_at_last_good_component:[u8;HASH_LEN],content:Vec<(ComponentHeader,Content)>},
     DataCorruption{component_start:u64,component_tag:ComponentTag},
     BBlock { middle: Vec<(ComponentHeader,Content)>, end: BlockEnd, errors_corrected: usize , hash:[u8;HASH_LEN],corrupted_content_blocks:Vec<CorruptDataSegment>}
 }
@@ -203,7 +203,7 @@ pub fn read_block_middle<RW:std::io::Write + std::io::Read + std::io::Seek, B:Bl
         let (errs,header) = match read_content_header(reader_writer,error_correct_header,&mut hasher){
             Ok(a) => a,
             Err(ReadWriteError::EndOfFile) => {
-                return Ok(BlockMiddleState::UnexpectedEof { last_good_component_end,hash_at_last_good_component })
+                return Ok(BlockMiddleState::UnexpectedEof { last_good_component_end,hash_at_last_good_component,content:middle })
             },
             Err(ReadWriteError::EccTooManyErrors) => {
                 return Ok(BlockMiddleState::DataCorruption { component_start: last_good_component_end,component_tag:ComponentTag::Header})
@@ -231,7 +231,7 @@ pub fn read_block_middle<RW:std::io::Write + std::io::Read + std::io::Seek, B:Bl
                         }
                     },
                     Err(ReadWriteError::EndOfFile) => {
-                        return Ok(BlockMiddleState::UnexpectedEof { last_good_component_end,hash_at_last_good_component })
+                        return Ok(BlockMiddleState::UnexpectedEof { last_good_component_end,hash_at_last_good_component,content:middle})
                     },
                     Err(e)=>return Err(e)
                 }
@@ -241,7 +241,7 @@ pub fn read_block_middle<RW:std::io::Write + std::io::Read + std::io::Seek, B:Bl
                 let (errs,hash) = match read_hash(reader_writer,false) {
                     Ok(a) => a,
                     Err(ReadWriteError::EndOfFile) => {
-                        return Ok(BlockMiddleState::UnexpectedEof { last_good_component_end,hash_at_last_good_component })
+                        return Ok(BlockMiddleState::UnexpectedEof { last_good_component_end,hash_at_last_good_component,content:middle })
                     },
                     Err(ReadWriteError::EccTooManyErrors) => {
                         return Ok(BlockMiddleState::DataCorruption { component_start: last_good_component_end,component_tag:ComponentTag::Hash})

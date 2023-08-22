@@ -123,7 +123,7 @@ pub enum BlockState{
     ///If this is returned, truncate file at block_start_offset and try finding another block before this
     OpenABlock{truncate_at:u64},
     ///If this is returned, truncate file at given index and write a BlockEnd.
-    OpenBBlock{hash_for_end:[u8;HASH_LEN],truncate_at:u64,errors:usize},
+    OpenBBlock{hash_for_end:[u8;HASH_LEN],truncate_at:u64,errors:usize,content:Vec<(ComponentHeader,Content)>},
     ///Incomplete Start header.
     IncompleteStartHeader{truncate_at:u64},
     ///This is only returned when we try to read a block start header that doesn't pass ECC
