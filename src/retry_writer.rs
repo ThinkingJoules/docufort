@@ -17,7 +17,7 @@ Or you could wrap it in a struct that stores the return values and a file handle
 
 use std::fmt::Debug;
 
-use crate::{core::{BlockInputs, ComponentHeader}, write::{write_magic_number, write_header, write_content_header, write_content, write_block_hash}, BlockTag, ReadWriteError};
+use crate::{core::{BlockInputs, ComponentHeader}, write::{write_magic_number, write_header, write_content_header, write_content, write_block_hash}, HeaderTag, ReadWriteError};
 
 
 
@@ -229,7 +229,7 @@ where
             Ok(None)
         },
         InnerOp::WriteABlockStart{ data_len, time_stamp, calc_ecc } => {
-            let tag = if calc_ecc {BlockTag::StartAEBlock as u8}else{BlockTag::StartABlock as u8};
+            let tag = if calc_ecc {HeaderTag::StartAEBlock as u8}else{HeaderTag::StartABlock as u8};
             let header = ComponentHeader::new_from_parts(tag, time_stamp, Some(data_len));
             if let Err(e) = write_header(file,&header) {
                 return Err((InnerOperation{ inner, start_offset:Some(start_offset) },e))
@@ -237,7 +237,7 @@ where
             Ok(None)
         },
         InnerOp::WriteBBlockStart { time_stamp } => {
-            let tag = BlockTag::StartBBlock as u8;
+            let tag = HeaderTag::StartBBlock as u8;
             let header = ComponentHeader::new_from_parts(tag, time_stamp, None);
             if let Err(e) = write_header(file,&header) {
                 return Err((InnerOperation{ inner, start_offset:Some(start_offset) },e))
@@ -261,7 +261,7 @@ where
             Ok(Some(b))
         },
         InnerOp::WriteEndHeader { time_stamp, hasher } => {
-            let tag = BlockTag::EndBlock as u8;
+            let tag = HeaderTag::EndBlock as u8;
             let time_stamp = time_stamp.unwrap_or_else(||B::current_timestamp().to_be_bytes());
             let header = ComponentHeader::new_from_parts(tag, time_stamp, None);
             if let Err(e) = write_header(file,&header) {
@@ -329,7 +329,7 @@ mod test_super {
     
         // Write BlockStart for Best Effort Block
         if log_pos {println!("BLOCK START: {}",cursor.position())};
-        let b_block_header = ComponentHeader::new_from_parts(BlockTag::StartBBlock as u8, DummyInput::current_timestamp().to_be_bytes(), None);
+        let b_block_header = ComponentHeader::new_from_parts(HeaderTag::StartBBlock as u8, DummyInput::current_timestamp().to_be_bytes(), None);
         write_header(&mut cursor, &b_block_header).unwrap();
     
         // Write 3 Content Components
@@ -344,7 +344,7 @@ mod test_super {
     
     
         let b_block_hash = hasher.finalize();
-        let block_end_header = ComponentHeader::new_from_parts(BlockTag::EndBlock as u8, DummyInput::current_timestamp().to_be_bytes(), None);
+        let block_end_header = ComponentHeader::new_from_parts(HeaderTag::EndBlock as u8, DummyInput::current_timestamp().to_be_bytes(), None);
         write_block_end(&mut cursor, &block_end_header, &b_block_hash).unwrap();
         
         if log_pos {println!("MN START: {}",cursor.position())};

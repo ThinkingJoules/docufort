@@ -64,55 +64,65 @@ pub const HASH_LEN:usize = 20;
 pub const HASH_AND_ECC_LEN:usize = HASH_LEN+ECC_LEN;
 
 ///Tag for an Atomic Block (b'A') with **no** ECC on content.
-pub const A_BLOCK:u8 = b'A';
-///Tag for an Atomic Block **with** ECC on content.
-pub const AE_BLOCK:u8 = b'Q';
+pub const A_BLOCK:u8 = 0b0000_0000;
 ///Tag for a Best Effort Block (b'B')
-pub const B_BLOCK:u8 = b'B';
+pub const B_BLOCK:u8 = 0b0010_0000;
 /// First byte tag for the 'Content' message with **no** ECC on content.
-pub const C_TAG:u8 = b'@';
-/// First byte tag for the 'Content' message with **no** ECC on content.
-pub const CE_TAG:u8 = b'P';
+pub const CON_TAG:u8 = 0b0100_0000;
 /// First byte tag for the 'End Block' message.
-pub const END_BLOCK:u8 = b'D';
+pub const END_TAG:u8 = 0b0110_0000;
+pub const HAS_ECC:u8 = 0b0000_1000;
+pub const IS_COMP:u8 = 0b0000_0100;
+
 
 ///Represents are different block types for matching against.
 #[repr(u8)]
 #[derive(Copy, Clone, Debug, PartialEq, Eq)]
-pub enum BlockTag {
+pub enum HeaderTag {
     ///Atomic Start, no ECC
     StartABlock = A_BLOCK,
     ///Atomic Start, with ECC
-    StartAEBlock = AE_BLOCK,
+    StartAEBlock =  A_BLOCK | HAS_ECC,
+    ///Atomic Start, with !ECC && COMP
+    StartACBlock = A_BLOCK | IS_COMP,
+    ///Atomic Start, with ECC && COMP
+    StartAECBlock = A_BLOCK | IS_COMP | HAS_ECC,
     ///Best Effort Start
     StartBBlock = B_BLOCK,
     ///Content Start
-    CComponent = C_TAG,
+    CComponent = CON_TAG,
     ///Content Start with ECC
-    CEComponent = CE_TAG,
+    CEComponent = CON_TAG | HAS_ECC,
+    ///Atomic Start, with !ECC && COMP
+    CCComponent = CON_TAG | IS_COMP,
+    ///Atomic Start, with ECC && COMP
+    CECComponent = CON_TAG | IS_COMP | HAS_ECC,
     ///Block End
-    EndBlock = END_BLOCK,
+    EndBlock = END_TAG,
 }
 
-impl BlockTag {
+impl HeaderTag {
     fn has_ecc(&self)->bool{
-        match self {
-            BlockTag::StartAEBlock |
-            BlockTag::CEComponent => true,
-            _ => false,
-        }
+        *self as u8 & HAS_ECC == HAS_ECC
+    }
+    fn is_comp(&self)->bool{
+        *self as u8 & IS_COMP == IS_COMP
     }
 }
 
-impl From<u8> for BlockTag {
+impl From<u8> for HeaderTag {
     fn from(val: u8) -> Self {
         match val {
-            A_BLOCK => BlockTag::StartABlock,
-            B_BLOCK => BlockTag::StartBBlock,
-            END_BLOCK => BlockTag::EndBlock,
-            C_TAG => BlockTag::CComponent,
-            CE_TAG => BlockTag::CEComponent,
-            AE_BLOCK => BlockTag::StartAEBlock,
+            B_BLOCK => HeaderTag::StartBBlock,
+            END_TAG => HeaderTag::EndBlock,
+            A_BLOCK => HeaderTag::StartABlock,
+            a if a == A_BLOCK | HAS_ECC => HeaderTag::StartAEBlock,
+            a if a == A_BLOCK | IS_COMP => HeaderTag::StartACBlock,
+            a if a == A_BLOCK | HAS_ECC | IS_COMP => HeaderTag::StartAECBlock,
+            CON_TAG => HeaderTag::CComponent,
+            a if a == CON_TAG | HAS_ECC => HeaderTag::CEComponent,
+            a if a == CON_TAG | IS_COMP => HeaderTag::CCComponent,
+            a if a == CON_TAG | HAS_ECC | IS_COMP => HeaderTag::CECComponent,
             _ => panic!("Unknown block tag!"),
         }
     }

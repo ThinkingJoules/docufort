@@ -83,7 +83,7 @@ It is recommended to use a cryptographic hash.
 */
 
 
-use crate::{core::{BlockInputs, ComponentHeader}, ECC_LEN, ecc::{calculate_ecc_chunk, calculate_ecc_for_chunks}, MN_ECC, MAGIC_NUMBER, HASH_LEN, BlockTag, ReadWriteError, HashAdapter};
+use crate::{core::{BlockInputs, ComponentHeader}, ECC_LEN, ecc::{calculate_ecc_chunk, calculate_ecc_for_chunks}, MN_ECC, MAGIC_NUMBER, HASH_LEN, HeaderTag, ReadWriteError, HashAdapter};
 
 
 /// Initializes a new DocuFort file at the specified path.
@@ -114,7 +114,7 @@ pub fn write_header<W: std::io::Write>(writer: &mut W,header:&ComponentHeader)->
 }
 ///Calculates ECC and Writes the header to the given writer.
 pub fn write_content_header<W: std::io::Write, B:BlockInputs>(writer: &mut W,data_len:u32,has_ecc:bool,time_stamp: Option<u64>,hasher:&mut B)->Result<(),ReadWriteError>{
-    let tag = if has_ecc {BlockTag::CEComponent as u8}else{BlockTag::CComponent as u8};
+    let tag = if has_ecc {HeaderTag::CEComponent as u8}else{HeaderTag::CComponent as u8};
     let time_stamp = if let Some(ts) = time_stamp {ts.to_be_bytes()}else{B::current_timestamp().to_be_bytes()};
     let content_header = ComponentHeader::new_from_parts(tag, time_stamp, Some(data_len));
     let mut ha = HashAdapter::new(writer, hasher);
@@ -159,7 +159,7 @@ pub fn write_content_component<W: std::io::Write,B:BlockInputs>(writer: &mut W,c
 ///Writes Header + Content Component, optionally computes ECC
 pub fn write_atomic_block<W: std::io::Write,B:BlockInputs>(writer: &mut W,start_time_stamp: Option<u64>,content:&[u8],calc_ecc:bool,end_block:Option<&ComponentHeader>)->Result<(),ReadWriteError>{
     let mut h = B::new();
-    let tag = if calc_ecc {BlockTag::StartAEBlock}else{BlockTag::StartABlock};
+    let tag = if calc_ecc {HeaderTag::StartAEBlock}else{HeaderTag::StartABlock};
     let data = content.len() as u32;
     let time_stamp = start_time_stamp.unwrap_or_else(||B::current_timestamp()).to_be_bytes();
     let header = ComponentHeader::new_from_parts(tag as u8,time_stamp , Some(data));
@@ -167,10 +167,10 @@ pub fn write_atomic_block<W: std::io::Write,B:BlockInputs>(writer: &mut W,start_
     write_content(writer, content, calc_ecc, &mut h)?;
     let hash = h.finalize();
     if let Some(header) = end_block {
-        assert_eq!(header.tag(),BlockTag::EndBlock);
+        assert_eq!(header.tag(),HeaderTag::EndBlock);
         write_block_end(writer, header, &hash)?;
     }else{
-        let tag = BlockTag::EndBlock;
+        let tag = HeaderTag::EndBlock;
         let data = None;
         let time_stamp = B::current_timestamp().to_be_bytes();
         let header = ComponentHeader::new_from_parts(tag as u8,time_stamp , data);
@@ -183,7 +183,7 @@ pub fn write_atomic_block<W: std::io::Write,B:BlockInputs>(writer: &mut W,start_
 
 #[cfg(test)]
 mod test_super {
-    use crate::BlockTag;
+    use crate::HeaderTag;
     use super::*;
     use std::io::Cursor;
 
@@ -223,13 +223,13 @@ mod test_super {
     fn test_write_header() {
         let mut writer = Cursor::new(Vec::new());
         let time_stamp = [1u8;8];
-        let header = ComponentHeader::new_from_parts(BlockTag::StartBBlock as u8, time_stamp, None);
+        let header = ComponentHeader::new_from_parts(HeaderTag::StartBBlock as u8, time_stamp, None);
         let result = write_header(&mut writer,&header);
 
         assert!(result.is_ok(), "write_header returned an error: {:?}", result.err());
         let data = writer.into_inner();
 
-        assert_eq!(data[0],BlockTag::StartBBlock as u8);
+        assert_eq!(data[0],HeaderTag::StartBBlock as u8);
         assert_eq!(&data[1..9],[1u8;8]);
         assert_eq!(&data[9..13],[0u8;4]);
 
@@ -265,14 +265,14 @@ mod test_super {
     fn test_write_block_end() {
         let mut writer = Cursor::new(Vec::new());
         let time_stamp = [1u8;8];
-        let header = ComponentHeader::new_from_parts(BlockTag::EndBlock as u8, time_stamp, None);
+        let header = ComponentHeader::new_from_parts(HeaderTag::EndBlock as u8, time_stamp, None);
         let hash = [2u8;HASH_LEN];
         let result = write_block_end(&mut writer,&header,&hash);
 
         assert!(result.is_ok(), "write_content returned an error: {:?}", result.err());
         let data = writer.into_inner();
 
-        assert_eq!(data[0],BlockTag::EndBlock as u8);
+        assert_eq!(data[0],HeaderTag::EndBlock as u8);
         assert_eq!(&data[1..9],[1u8;8]);
         assert_eq!(&data[9..13],[0u8;4]);
         assert_eq!(&data[13+ECC_LEN..23+ECC_LEN],&hash[..10]);
@@ -284,17 +284,17 @@ mod test_super {
         let start_time_stamp = u64::from_be_bytes([1u8;8]);
         let end_time_stamp = [2u8;8];
         let content = &[1u8,2,3,4,5,6,7,8,9,0];
-        let end_block = ComponentHeader::new_from_parts(BlockTag::EndBlock as u8, end_time_stamp, None);
+        let end_block = ComponentHeader::new_from_parts(HeaderTag::EndBlock as u8, end_time_stamp, None);
         let result = write_atomic_block::<_,DummyHasher>(&mut writer, Some(start_time_stamp), content, false, Some(&end_block));
 
         assert!(result.is_ok(), "write_content returned an error: {:?}", result.err());
         let data = writer.into_inner();
 
-        assert_eq!(data[0],BlockTag::StartABlock as u8);
+        assert_eq!(data[0],HeaderTag::StartABlock as u8);
         assert_eq!(&data[1..9],[1u8;8]);
         assert_eq!(&data[9..13],[10,0,0,0]);
         assert_eq!(&data[13+ECC_LEN..23+ECC_LEN],&content[..10]);
-        assert_eq!(data[13+ECC_LEN+content.len()..14+ECC_LEN+content.len()][0],BlockTag::EndBlock as u8);
+        assert_eq!(data[13+ECC_LEN+content.len()..14+ECC_LEN+content.len()][0],HeaderTag::EndBlock as u8);
     }
 
     #[test]
@@ -303,17 +303,17 @@ mod test_super {
         let start_time_stamp = u64::from_be_bytes([1u8;8]);
         let end_time_stamp = [2u8;8];
         let content = &[1u8,2,3,4,5,6,7,8,9,0];
-        let end_block = ComponentHeader::new_from_parts(BlockTag::EndBlock as u8, end_time_stamp, None);
+        let end_block = ComponentHeader::new_from_parts(HeaderTag::EndBlock as u8, end_time_stamp, None);
         let result = write_atomic_block::<_,DummyHasher>(&mut writer, Some(start_time_stamp), content, true, Some(&end_block));
 
         assert!(result.is_ok(), "write_content returned an error: {:?}", result.err());
         let data = writer.into_inner();
 
-        assert_eq!(data[0],BlockTag::StartAEBlock as u8);
+        assert_eq!(data[0],HeaderTag::StartAEBlock as u8);
         assert_eq!(&data[1..9],[1u8;8]);
         assert_eq!(&data[9..13],[10,0,0,0]);
         assert_eq!(&data[13+ECC_LEN*2..23+ECC_LEN*2],&content[..10]);
-        assert_eq!(&data[13+(ECC_LEN*2)+content.len()..14+(ECC_LEN*2)+content.len()],&[BlockTag::EndBlock as u8]);
+        assert_eq!(&data[13+(ECC_LEN*2)+content.len()..14+(ECC_LEN*2)+content.len()],&[HeaderTag::EndBlock as u8]);
 
     }
 

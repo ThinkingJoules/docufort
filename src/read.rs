@@ -6,7 +6,7 @@ Content error correction happens at a higher level.
 */
 
 
-use crate::{FILE_HEADER_LEN, MAGIC_NUMBER, ECC_LEN, core::{ComponentHeader, Content, BlockHash, BlockInputs, BlockEnd}, ReadWriteError, HEADER_LEN, ecc::{apply_ecc, calc_ecc_data_len}, HASH_AND_ECC_LEN, DATA_SIZE, BlockTag, HASH_LEN, ComponentTag, CorruptDataSegment, MN_ECC_LEN, MN_ECC};
+use crate::{FILE_HEADER_LEN, MAGIC_NUMBER, ECC_LEN, core::{ComponentHeader, Content, BlockHash, BlockInputs, BlockEnd}, ReadWriteError, HEADER_LEN, ecc::{apply_ecc, calc_ecc_data_len}, HASH_AND_ECC_LEN, DATA_SIZE, HeaderTag, HASH_LEN, ComponentTag, CorruptDataSegment, MN_ECC_LEN, MN_ECC};
 
 
 
@@ -212,13 +212,17 @@ pub fn read_block_middle<RW:std::io::Write + std::io::Read + std::io::Seek, B:Bl
         };
         errors_corrected += errs;
         match header.tag() {
-            BlockTag::StartABlock |
-            BlockTag::StartAEBlock |
-            BlockTag::StartBBlock => {
+            HeaderTag::StartABlock |
+            HeaderTag::StartACBlock |
+            HeaderTag::StartAEBlock |
+            HeaderTag::StartAECBlock |
+            HeaderTag::StartBBlock => {
                 return Ok(BlockMiddleState::InvalidBlockStructure { last_good_component_end })
             },
-            BlockTag::CComponent |
-            BlockTag::CEComponent => {
+            HeaderTag::CComponent |
+            HeaderTag::CCComponent |
+            HeaderTag::CECComponent |
+            HeaderTag::CEComponent => {
                 let content = header.as_content();
                 match read_content(reader_writer, &content, error_correct_content,&mut hasher) {
                     Ok((errs,cc)) => {
@@ -237,7 +241,7 @@ pub fn read_block_middle<RW:std::io::Write + std::io::Read + std::io::Seek, B:Bl
                 }
                 middle.push((header,content));
             },
-            BlockTag::EndBlock => {
+            HeaderTag::EndBlock => {
                 let (errs,hash) = match read_hash(reader_writer,false) {
                     Ok(a) => a,
                     Err(ReadWriteError::EndOfFile) => {

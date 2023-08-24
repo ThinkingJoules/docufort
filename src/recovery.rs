@@ -68,8 +68,10 @@ pub fn try_read_block<RW:std::io::Write + std::io::Read + std::io::Seek,B:BlockI
         Err(e) => return Err(e)
     };
     match start.tag() {
-        BlockTag::StartABlock |
-        BlockTag::StartAEBlock => {
+        HeaderTag::StartACBlock |
+        HeaderTag::StartAECBlock |
+        HeaderTag::StartABlock |
+        HeaderTag::StartAEBlock => {
             let content = start.as_content();
             let mut corrupted_content_blocks = match read_content(reader_writer, &content, error_correct_content,&mut hasher) {
                 Ok((errs,cc)) => {
@@ -87,7 +89,7 @@ pub fn try_read_block<RW:std::io::Write + std::io::Read + std::io::Seek,B:BlockI
                 Err(e)=>return Err(e)
             };
             let position = reader_writer.seek(std::io::SeekFrom::Current(0))?;
-            if let BlockTag::EndBlock = header.tag() {
+            if let HeaderTag::EndBlock = header.tag() {
                 let (e2,hash) = match read_hash(reader_writer, error_correct_header){
                     Ok(a) => a,
                     Err(ReadWriteError::EndOfFile) => return Ok(BlockState::OpenABlock { truncate_at: block_start-(MN_ECC_LEN) as u64 }),
@@ -109,7 +111,7 @@ pub fn try_read_block<RW:std::io::Write + std::io::Read + std::io::Seek,B:BlockI
                 Ok(BlockState::InvalidBlockStructure {end_of_last_good_component:block_start, info: "Did not find BlockEnd at correct position".to_string() })
             }
         }
-        BlockTag::StartBBlock => {
+        HeaderTag::StartBBlock => {
             match read_block_middle::<_,B>(reader_writer,error_correct_header,error_correct_content){
                 Ok(BlockMiddleState::BBlock { middle, end, errors_corrected:ec, hash, corrupted_content_blocks }) => {
                     errors_corrected += ec;
@@ -130,9 +132,11 @@ pub fn try_read_block<RW:std::io::Write + std::io::Read + std::io::Seek,B:BlockI
             }
         },
 
-        BlockTag::CComponent |
-        BlockTag::CEComponent => return Ok(BlockState::InvalidBlockStructure {end_of_last_good_component:block_start, info: "Found a Content Component, Expected BlockStart".to_string()}),
-        BlockTag::EndBlock => return Ok(BlockState::InvalidBlockStructure {end_of_last_good_component:block_start, info: "Found a BlockEnd, expected BlockStart".to_string() }),
+        HeaderTag::CCComponent |
+        HeaderTag::CECComponent |
+        HeaderTag::CComponent |
+        HeaderTag::CEComponent => return Ok(BlockState::InvalidBlockStructure {end_of_last_good_component:block_start, info: "Found a Content Component, Expected BlockStart".to_string()}),
+        HeaderTag::EndBlock => return Ok(BlockState::InvalidBlockStructure {end_of_last_good_component:block_start, info: "Found a BlockEnd, expected BlockStart".to_string() }),
     }
 }
 
@@ -210,7 +214,7 @@ pub fn recover_tail<B:BlockInputs>(file_path: &std::path::Path) -> Result<TailRe
                 file.set_len(*truncate_at_then_close_block)?;
                 file.seek(SeekFrom::End(0))?;
                 let time_stamp = B::current_timestamp();
-                let header = ComponentHeader::new_from_parts(BlockTag::EndBlock as u8, time_stamp.to_be_bytes(), None);
+                let header = ComponentHeader::new_from_parts(HeaderTag::EndBlock as u8, time_stamp.to_be_bytes(), None);
                 write_block_end(&mut file, &header, &hash_for_end)?;
                 continue; //should end in a closed block
             },

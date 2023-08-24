@@ -30,7 +30,7 @@ impl ComponentHeader {
         let data_start = if has_ecc {calc_ecc_data_len(data_len as usize) as u64+end_pos}else{end_pos};
         Content{ data_len, data_start, ecc:has_ecc }
     }
-    pub fn tag(&self)->BlockTag{
+    pub fn tag(&self)->HeaderTag{
         self.0[0].into()
     }
     pub fn start_pos(&self)->u64{

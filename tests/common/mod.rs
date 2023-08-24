@@ -45,7 +45,7 @@ pub fn generate_test_file() -> Cursor<Vec<u8>> {
 
     // Write BlockStart for Best Effort Block
     if log_pos {println!("BLOCK START: {}",cursor.position())};
-    let b_block_header = ComponentHeader::new_from_parts(BlockTag::StartBBlock as u8, DummyInput::current_timestamp().to_be_bytes(), None);
+    let b_block_header = ComponentHeader::new_from_parts(HeaderTag::StartBBlock as u8, DummyInput::current_timestamp().to_be_bytes(), None);
     write_header(&mut cursor, &b_block_header).unwrap();
 
     // Write 3 Content Components
@@ -60,7 +60,7 @@ pub fn generate_test_file() -> Cursor<Vec<u8>> {
 
 
     let b_block_hash = hasher.finalize();
-    let block_end_header = ComponentHeader::new_from_parts(BlockTag::EndBlock as u8, DummyInput::current_timestamp().to_be_bytes(), None);
+    let block_end_header = ComponentHeader::new_from_parts(HeaderTag::EndBlock as u8, DummyInput::current_timestamp().to_be_bytes(), None);
     write_block_end(&mut cursor, &block_end_header, &b_block_hash).unwrap();
     
     if log_pos {println!("MN START: {}",cursor.position())};
@@ -77,5 +77,5 @@ pub fn generate_test_file() -> Cursor<Vec<u8>> {
     cursor
 }
 pub const NULL_HASH:[u8;HASH_LEN] = [175, 19, 73, 185, 245, 249, 161, 166, 160, 64, 77, 234, 54, 220, 201, 73, 155, 203, 37, 201];
-pub const BLOCK_1_HASH:[u8;HASH_LEN] = [ 75, 82, 88, 16, 158, 92, 45, 236, 236, 23, 9, 241, 87, 152, 66, 110, 244, 61, 131, 47];
+pub const BLOCK_1_HASH:[u8;HASH_LEN] = [33, 215, 215, 192, 27, 1, 94, 58, 192, 97, 207, 38, 108, 77, 159, 4, 65, 107, 184, 244];
 pub const BLOCK_3_HASH:[u8;HASH_LEN] = [59, 64, 117, 102, 139, 248, 203, 101, 132, 81, 227, 62, 79, 23, 156, 103, 106, 46, 127, 152];

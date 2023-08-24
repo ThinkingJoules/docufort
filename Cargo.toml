@@ -7,6 +7,7 @@ edition = "2021"
 
 [dependencies]
 reed-solomon = "0.2.1"
+zstd = "0.12.4"
 
 [dev-dependencies]
 blake3 = "1.2.0"
