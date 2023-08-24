@@ -1,8 +1,8 @@
 use std::fs::OpenOptions;
 use std::io::{SeekFrom, Seek};
 
-use crate::core::Content;
-use crate::read::{read_header, read_content, read_hash, read_block_middle, BlockMiddleState};
+use crate::core::HeaderAsContent;
+use crate::read::{read_header, check_read_content, read_hash, read_block_middle, BlockMiddleState};
 use crate::write::write_block_end;
 //use write::{WriteError, FILE_HEADER_LEN};
 
@@ -72,11 +72,11 @@ pub fn try_read_block<RW:std::io::Write + std::io::Read + std::io::Seek,B:BlockI
         HeaderTag::StartAECBlock |
         HeaderTag::StartABlock |
         HeaderTag::StartAEBlock => {
-            let content = start.as_content();
-            let mut corrupted_content_blocks = match read_content(reader_writer, &content, error_correct_content,&mut hasher) {
-                Ok((errs,cc)) => {
+            let h_content = start.as_content();
+            let (mut corrupted_content_blocks, content) = match check_read_content(reader_writer, &h_content, error_correct_content,&mut hasher) {
+                Ok((errs,cc,content)) => {
                     errors_corrected+=errs;
-                    cc
+                    (cc,content)
                 },
                 Err(ReadWriteError::EndOfFile) => return Ok(BlockState::OpenABlock { truncate_at: block_start-(MN_ECC_LEN) as u64 }),
                 Err(e)=>return Err(e)
@@ -101,7 +101,7 @@ pub fn try_read_block<RW:std::io::Write + std::io::Read + std::io::Seek,B:BlockI
                 
                 if !content.ecc && hash_as_read != hash.hash() && error_correct_content{
                     assert!(corrupted_content_blocks.is_empty());
-                    let Content { data_len, data_start, .. } = start.as_content();
+                    let HeaderAsContent { data_len, data_start, .. } = start.as_content();
                     corrupted_content_blocks.push(CorruptDataSegment::Corrupt{ data_start, data_len });
                 }
                 let end = BlockEnd{ header, hash };

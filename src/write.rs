@@ -83,7 +83,11 @@ It is recommended to use a cryptographic hash.
 */
 
 
-use crate::{core::{BlockInputs, ComponentHeader}, ECC_LEN, ecc::{calculate_ecc_chunk, calculate_ecc_for_chunks}, MN_ECC, MAGIC_NUMBER, HASH_LEN, HeaderTag, ReadWriteError, HashAdapter};
+use std::borrow::Cow;
+
+use zstd::{zstd_safe::CompressionLevel, bulk::compress_to_buffer};
+
+use crate::{core::{BlockInputs, ComponentHeader}, ECC_LEN, ecc::{calculate_ecc_chunk, calculate_ecc_for_chunks}, MN_ECC, MAGIC_NUMBER, HASH_LEN, HeaderTag, ReadWriteError, HashAdapter, HAS_ECC, IS_COMP};
 
 
 /// Initializes a new DocuFort file at the specified path.
@@ -113,8 +117,10 @@ pub fn write_header<W: std::io::Write>(writer: &mut W,header:&ComponentHeader)->
     Ok(())
 }
 ///Calculates ECC and Writes the header to the given writer.
-pub fn write_content_header<W: std::io::Write, B:BlockInputs>(writer: &mut W,data_len:u32,has_ecc:bool,time_stamp: Option<u64>,hasher:&mut B)->Result<(),ReadWriteError>{
-    let tag = if has_ecc {HeaderTag::CEComponent as u8}else{HeaderTag::CComponent as u8};
+pub fn write_content_header<W: std::io::Write, B:BlockInputs>(writer: &mut W,data_len:u32,has_ecc:bool,is_compressed:bool,time_stamp: Option<u64>,hasher:&mut B)->Result<(),ReadWriteError>{
+    let mut tag = HeaderTag::CComponent as u8;
+    if has_ecc {tag |= HAS_ECC}
+    if is_compressed {tag |= IS_COMP}
     let time_stamp = if let Some(ts) = time_stamp {ts.to_be_bytes()}else{B::current_timestamp().to_be_bytes()};
     let content_header = ComponentHeader::new_from_parts(tag, time_stamp, Some(data_len));
     let mut ha = HashAdapter::new(writer, hasher);
@@ -124,7 +130,7 @@ pub fn write_content_header<W: std::io::Write, B:BlockInputs>(writer: &mut W,dat
     Ok(())
 }
 
-///Only use with Atomic Block. Does **NOT** write the header.
+///Only use with Atomic Block. Does **NOT** write the header, Does **NOT** Compress.
 pub fn write_content<W: std::io::Write,B:BlockInputs>(writer: &mut W,content:&[u8],calc_ecc:bool,hasher:&mut B)->Result<(),ReadWriteError>{
     if calc_ecc {
         let mut hw = HashAdapter::new(writer, hasher);
@@ -149,22 +155,49 @@ pub fn write_block_hash<W: std::io::Write>(writer: &mut W,hash:&[u8;HASH_LEN])->
 }
 
 ///Writes Header + Content Component, optionally computes ECC
-pub fn write_content_component<W: std::io::Write,B:BlockInputs>(writer: &mut W,calc_ecc:bool,time_stamp: Option<u64>,content:&[u8],hasher:&mut B)->Result<(),ReadWriteError>{
-    let data_len = content.len() as u32;
-    write_content_header(writer, data_len,calc_ecc,time_stamp,hasher)?;
-    write_content(writer, content, calc_ecc, hasher)?;
+pub fn write_content_component<W: std::io::Write,B:BlockInputs>(writer: &mut W,calc_ecc:bool,compress:Option<CompressionLevel>,time_stamp: Option<u64>,content:&[u8],hasher:&mut B)->Result<(),ReadWriteError>{
+    let (content,is_compressed) = if let Some(cl) = compress {
+        let data_len = content.len();
+        let mut v = vec![0u8;data_len+4];//we need to allocate given the nature of needing to do ECC yet. TODO: Figure out how not to
+        match compress_to_buffer(content, &mut v[4..], cl) {
+            Ok(n) if n < data_len => {
+                v.truncate(n+4);
+                use std::io::Write;
+                (&mut v[0..3]).write_all(&(data_len as u32).to_be_bytes()).unwrap();
+                (Cow::Owned(v),true)
+            },
+            _ => (Cow::Borrowed(content),false),
+        }
+    }else{(Cow::Borrowed(content),false)};
+    write_content_header(writer, content.len() as u32,calc_ecc,is_compressed,time_stamp,hasher)?;
+    write_content(writer, content.as_ref(), calc_ecc, hasher)?;
     Ok(())
 }
 
 ///Writes Header + Content Component, optionally computes ECC
-pub fn write_atomic_block<W: std::io::Write,B:BlockInputs>(writer: &mut W,start_time_stamp: Option<u64>,content:&[u8],calc_ecc:bool,end_block:Option<&ComponentHeader>)->Result<(),ReadWriteError>{
+pub fn write_atomic_block<W: std::io::Write,B:BlockInputs>(writer: &mut W,start_time_stamp: Option<u64>,content:&[u8],calc_ecc:bool,compress:Option<CompressionLevel>,end_block:Option<&ComponentHeader>)->Result<(),ReadWriteError>{
     let mut h = B::new();
-    let tag = if calc_ecc {HeaderTag::StartAEBlock}else{HeaderTag::StartABlock};
+    let (content,is_compressed) = if let Some(cl) = compress {
+        let data_len = content.len();
+        let mut v = vec![0u8;data_len+4];//we need to allocate given the nature of needing to do ECC yet. TODO: Figure out how not to
+        match compress_to_buffer(content, &mut v[4..], cl) {
+            Ok(n) if n < data_len => {
+                v.truncate(n+4);
+                use std::io::Write;
+                (&mut v[0..3]).write_all(&(data_len as u32).to_be_bytes()).unwrap();
+                (Cow::Owned(v),true)
+            },
+            _ => (Cow::Borrowed(content),false),
+        }
+    }else{(Cow::Borrowed(content),false)};
+    let mut tag = HeaderTag::StartABlock as u8;
+    if calc_ecc {tag |= HAS_ECC}
+    if is_compressed {tag |= IS_COMP}    
     let data = content.len() as u32;
     let time_stamp = start_time_stamp.unwrap_or_else(||B::current_timestamp()).to_be_bytes();
     let header = ComponentHeader::new_from_parts(tag as u8,time_stamp , Some(data));
     write_header(writer, &header)?;   
-    write_content(writer, content, calc_ecc, &mut h)?;
+    write_content(writer, content.as_ref(), calc_ecc, &mut h)?;
     let hash = h.finalize();
     if let Some(header) = end_block {
         assert_eq!(header.tag(),HeaderTag::EndBlock);
@@ -285,7 +318,7 @@ mod test_super {
         let end_time_stamp = [2u8;8];
         let content = &[1u8,2,3,4,5,6,7,8,9,0];
         let end_block = ComponentHeader::new_from_parts(HeaderTag::EndBlock as u8, end_time_stamp, None);
-        let result = write_atomic_block::<_,DummyHasher>(&mut writer, Some(start_time_stamp), content, false, Some(&end_block));
+        let result = write_atomic_block::<_,DummyHasher>(&mut writer, Some(start_time_stamp), content, false, None,Some(&end_block));
 
         assert!(result.is_ok(), "write_content returned an error: {:?}", result.err());
         let data = writer.into_inner();
@@ -304,7 +337,7 @@ mod test_super {
         let end_time_stamp = [2u8;8];
         let content = &[1u8,2,3,4,5,6,7,8,9,0];
         let end_block = ComponentHeader::new_from_parts(HeaderTag::EndBlock as u8, end_time_stamp, None);
-        let result = write_atomic_block::<_,DummyHasher>(&mut writer, Some(start_time_stamp), content, true, Some(&end_block));
+        let result = write_atomic_block::<_,DummyHasher>(&mut writer, Some(start_time_stamp), content, true, None,Some(&end_block));
 
         assert!(result.is_ok(), "write_content returned an error: {:?}", result.err());
         let data = writer.into_inner();

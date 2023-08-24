@@ -17,7 +17,9 @@ Or you could wrap it in a struct that stores the return values and a file handle
 
 use std::fmt::Debug;
 
-use crate::{core::{BlockInputs, ComponentHeader}, write::{write_magic_number, write_header, write_content_header, write_content, write_block_hash}, HeaderTag, ReadWriteError};
+use zstd::zstd_safe::CompressionLevel;
+
+use crate::{core::{BlockInputs, ComponentHeader}, write::{write_magic_number, write_header, write_block_hash, write_atomic_block, write_content_component}, HeaderTag, ReadWriteError};
 
 
 
@@ -34,16 +36,16 @@ pub struct Operation<T:AsRef<[u8]>>{
     ///This is basically always the header for the Op.
     ///If the Op is ContentWrite, then this is 'BlockStart'
     pub timestamp:Option<u64>,
-    pub calc_ecc:bool
+    pub calc_ecc:bool,
+    pub compress:Option<CompressionLevel>
 }
 
 #[derive(Debug)]
 enum InnerOp<T:AsRef<[u8]>,B:BlockInputs> {
     WriteMagicNumber,
-    WriteABlockStart{data_len:u32,time_stamp:[u8;8],calc_ecc:bool},
+    WriteABlock{time_stamp:u64,content: T, calc_ecc: bool, compress:Option<CompressionLevel> },
     WriteBBlockStart{time_stamp:[u8;8]},
-    WriteContentHeader{data_len:u32,time_stamp:u64,calc_ecc:bool,hasher:Option<B>},
-    WriteContent(T,Option<B>,bool),
+    WriteContentComponent{time_stamp:u64,content: T, calc_ecc: bool, compress:Option<CompressionLevel>,hasher:Option<B>},
     WriteEndHeader{time_stamp:Option<[u8;8]>,hasher:Option<B>},
     WriteHash(Option<B>)
 }
@@ -51,8 +53,7 @@ enum InnerOp<T:AsRef<[u8]>,B:BlockInputs> {
 impl<T: AsRef<[u8]>, B: BlockInputs> InnerOp<T, B> {
     fn insert_hasher(&mut self,hasher:B){
         match self {
-            InnerOp::WriteContentHeader{hasher:b,..} |
-            InnerOp::WriteContent(_, b,_) |
+            InnerOp::WriteContentComponent{hasher:b,..} |
             InnerOp::WriteEndHeader { hasher:b, .. } |
             InnerOp::WriteHash(b) =>{let _ = b.insert(hasher);},
             _ => ()
@@ -104,7 +105,7 @@ where
     T: AsRef<[u8]>+Debug,
     B: BlockInputs+Debug,
 {    
-    let Operation { op, timestamp, calc_ecc } = oper;
+    let Operation { op, timestamp, calc_ecc, compress } = oper;
     //let time_stamp = timestamp.map(|u|u.to_be_bytes());
     let (tail_state,inner_ops) = match (tail,op) {
         (TailState::OpenBBlock { hasher }, Op::CloseBlock) => {
@@ -117,30 +118,23 @@ where
             )
         },
         (TailState::OpenBBlock { hasher }, Op::AtomicWrite(t)) => {
-            let time_stamp = timestamp.unwrap_or_else(B::current_timestamp).to_be_bytes();
-            let data_len = t.as_ref().len() as u32;
+            let time_stamp = timestamp.unwrap_or_else(B::current_timestamp);
             (
                 TailState::ClosedBlock,
                 vec![
                     InnerOp::WriteEndHeader { time_stamp:None ,hasher:None },
                     InnerOp::WriteHash(Some(hasher)),
                     InnerOp::WriteMagicNumber,
-                    InnerOp::WriteABlockStart{time_stamp, data_len, calc_ecc },
-                    InnerOp::WriteContent(t,None,calc_ecc),
-                    InnerOp::WriteEndHeader {time_stamp:None, hasher:None },
-                    InnerOp::WriteHash (None)
-
+                    InnerOp::WriteABlock{time_stamp, content: t, calc_ecc, compress },
                 ]
             )
         },
         (TailState::OpenBBlock { hasher }, Op::ContentWrite(t,_)) => {
             let time_stamp = timestamp.unwrap_or_else(B::current_timestamp);
-            let data_len = t.as_ref().len() as u32;
             (
                 TailState::OpenBBlock { hasher:B::new() },
                 vec![
-                    InnerOp::WriteContentHeader{time_stamp, data_len, calc_ecc ,hasher:Some(hasher)},
-                    InnerOp::WriteContent(t,None,calc_ecc),
+                    InnerOp::WriteContentComponent{time_stamp, content: t, calc_ecc, compress ,hasher:Some(hasher)},
                 ]
             )
         },
@@ -150,25 +144,19 @@ where
             return Ok(clean)
         },
         (clean, Op::AtomicWrite(t)) =>{
-            let time_stamp = timestamp.unwrap_or_else(B::current_timestamp).to_be_bytes();
-            let data_len = t.as_ref().len() as u32;
+            let time_stamp = timestamp.unwrap_or_else(B::current_timestamp);
             let ops = vec![
                 if clean.is_closed() { Some(InnerOp::WriteMagicNumber) } else { None },
-                Some(InnerOp::WriteABlockStart { time_stamp, data_len, calc_ecc }),
-                Some(InnerOp::WriteContent(t, None, calc_ecc)),
-                Some(InnerOp::WriteEndHeader { time_stamp: None, hasher: None }),
-                Some(InnerOp::WriteHash(None)),
+                Some(InnerOp::WriteABlock { time_stamp, content: t, calc_ecc, compress  }),
             ].into_iter().filter_map(|x| x).collect::<Vec<_>>();
             (TailState::ClosedBlock,ops)
         },
         (clean, Op::ContentWrite(t,content_timestamp)) =>  {
             let (s_stamp,c_stamp) = (timestamp.unwrap_or_else(B::current_timestamp).to_be_bytes(),content_timestamp.unwrap_or_else(B::current_timestamp));
-            let data_len = t.as_ref().len() as u32;
             let ops = vec![
                 if clean.is_closed() { Some(InnerOp::WriteMagicNumber) } else { None },
                 Some(InnerOp::WriteBBlockStart { time_stamp: s_stamp }),
-                Some(InnerOp::WriteContentHeader { time_stamp: c_stamp, data_len, calc_ecc, hasher: Some(B::new()) }),
-                Some(InnerOp::WriteContent(t, None, calc_ecc)),
+                Some(InnerOp::WriteContentComponent { time_stamp:c_stamp, content: t, calc_ecc, compress , hasher: Some(B::new()) }),
             ].into_iter().filter_map(|x| x).collect::<Vec<_>>();
             (TailState::OpenBBlock { hasher:B::new() },ops)
         },
@@ -228,11 +216,10 @@ where
             }
             Ok(None)
         },
-        InnerOp::WriteABlockStart{ data_len, time_stamp, calc_ecc } => {
-            let tag = if calc_ecc {HeaderTag::StartAEBlock as u8}else{HeaderTag::StartABlock as u8};
-            let header = ComponentHeader::new_from_parts(tag, time_stamp, Some(data_len));
-            if let Err(e) = write_header(file,&header) {
-                return Err((InnerOperation{ inner, start_offset:Some(start_offset) },e))
+        InnerOp::WriteABlock{ time_stamp, calc_ecc, content, compress } => {
+            
+            if let Err(e) = write_atomic_block::<_,B>(file,Some(time_stamp),content.as_ref(),calc_ecc,compress,None) {
+                return Err((InnerOperation{ inner:InnerOp::WriteABlock{ time_stamp, calc_ecc, content, compress }, start_offset:Some(start_offset) },e))
             }
             Ok(None)
         },
@@ -244,19 +231,11 @@ where
             }
             Ok(None)
         },
-        InnerOp::WriteContentHeader { data_len, time_stamp, calc_ecc, hasher } => {
+        InnerOp::WriteContentComponent { time_stamp, content, calc_ecc, compress, hasher } => {
             let mut b = if let Some(b) = hasher {b}else{B::new()};
             let hasher = Some(b.clone());//preserve hash state in case of failure
-            if let Err(e) = write_content_header(file,data_len,calc_ecc,Some(time_stamp),&mut b) {
-                return Err((InnerOperation{ inner:InnerOp::WriteContentHeader { data_len, time_stamp, calc_ecc, hasher}, start_offset:Some(start_offset) },e))
-            }
-            Ok(Some(b))
-        },
-        InnerOp::WriteContent(data, hasher,calc_ecc) => {
-            let mut b = if let Some(b) = hasher {b}else{B::new()};
-            let hasher = Some(b.clone());//preserve hash state in case of failure
-            if let Err(e) = write_content(file,data.as_ref(),calc_ecc,&mut b) {
-                return Err((InnerOperation{ inner:InnerOp::WriteContent(data, hasher,calc_ecc), start_offset:Some(start_offset) },e))
+            if let Err(e) = write_content_component(file,calc_ecc,compress,Some(time_stamp),content.as_ref(),&mut b) {
+                return Err((InnerOperation{ inner:InnerOp::WriteContentComponent {  time_stamp, content, calc_ecc, compress, hasher}, start_offset:Some(start_offset) },e))
             }
             Ok(Some(b))
         },
@@ -334,13 +313,13 @@ mod test_super {
     
         // Write 3 Content Components
         if log_pos {println!("CONTENT COMPONENT START: {}",cursor.position())};
-        write_content_component(&mut cursor, false,None, B_CONTENT, &mut hasher).unwrap();
+        write_content_component(&mut cursor, false,None,None, B_CONTENT, &mut hasher).unwrap();
         
         if log_pos {println!("CONTENT COMPONENT START: {}",cursor.position())};
-        write_content_component(&mut cursor, true,None, B_CONTENT, &mut hasher).unwrap();
+        write_content_component(&mut cursor, true,None,None, B_CONTENT, &mut hasher).unwrap();
         
         if log_pos {println!("CONTENT COMPONENT START: {}",cursor.position())};
-        write_content_component(&mut cursor, false,None, B_CONTENT, &mut hasher).unwrap();
+        write_content_component(&mut cursor, false,None,None, B_CONTENT, &mut hasher).unwrap();
     
     
         let b_block_hash = hasher.finalize();
@@ -350,12 +329,12 @@ mod test_super {
         if log_pos {println!("MN START: {}",cursor.position())};
         write_magic_number(&mut cursor).unwrap();
         if log_pos {println!("BLOCK START: {}",cursor.position())};
-        write_atomic_block::<_,DummyInput>(&mut cursor, None, A_CONTENT, false, None).unwrap();
+        write_atomic_block::<_,DummyInput>(&mut cursor, None, A_CONTENT, false, None,None).unwrap();
         
         if log_pos {println!("MN START: {}",cursor.position())};
         write_magic_number(&mut cursor).unwrap();
         if log_pos {println!("BLOCK START: {}",cursor.position())};
-        write_atomic_block::<_,DummyInput>(&mut cursor, None, A_CONTENT, true, None).unwrap();
+        write_atomic_block::<_,DummyInput>(&mut cursor, None, A_CONTENT, true, None,None).unwrap();
     
     
         cursor
@@ -368,11 +347,11 @@ mod test_super {
         init_file(&mut cursor).unwrap();
 
         let ops = [
-            Operation{ op:Op::ContentWrite(B_CONTENT.to_vec(),None), timestamp: Some(DummyInput::current_timestamp()), calc_ecc: false },
-            Operation{ op:Op::ContentWrite(B_CONTENT.to_vec(),None), timestamp: Some(DummyInput::current_timestamp()), calc_ecc: true },
-            Operation{ op:Op::ContentWrite(B_CONTENT.to_vec(),None), timestamp: Some(DummyInput::current_timestamp()), calc_ecc: false },
-            Operation{ op:Op::AtomicWrite(A_CONTENT.to_vec()), timestamp: Some(DummyInput::current_timestamp()), calc_ecc: false },
-            Operation{ op:Op::AtomicWrite(A_CONTENT.to_vec()), timestamp: Some(DummyInput::current_timestamp()), calc_ecc: true },
+            Operation{ op:Op::ContentWrite(B_CONTENT.to_vec(),None), timestamp: Some(DummyInput::current_timestamp()), calc_ecc: false , compress:None},
+            Operation{ op:Op::ContentWrite(B_CONTENT.to_vec(),None), timestamp: Some(DummyInput::current_timestamp()), calc_ecc: true , compress:None},
+            Operation{ op:Op::ContentWrite(B_CONTENT.to_vec(),None), timestamp: Some(DummyInput::current_timestamp()), calc_ecc: false, compress:None },
+            Operation{ op:Op::AtomicWrite(A_CONTENT.to_vec()), timestamp: Some(DummyInput::current_timestamp()), calc_ecc: false, compress:None },
+            Operation{ op:Op::AtomicWrite(A_CONTENT.to_vec()), timestamp: Some(DummyInput::current_timestamp()), calc_ecc: true , compress:None},
         ];
         let mut tail_state: TailState<DummyInput> = TailState::ClosedBlock;
         for oper in ops {

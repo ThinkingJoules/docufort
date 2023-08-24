@@ -6,7 +6,9 @@ Content error correction happens at a higher level.
 */
 
 
-use crate::{FILE_HEADER_LEN, MAGIC_NUMBER, ECC_LEN, core::{ComponentHeader, Content, BlockHash, BlockInputs, BlockEnd}, ReadWriteError, HEADER_LEN, ecc::{apply_ecc, calc_ecc_data_len}, HASH_AND_ECC_LEN, DATA_SIZE, HeaderTag, HASH_LEN, ComponentTag, CorruptDataSegment, MN_ECC_LEN, MN_ECC};
+use zstd::Decoder;
+
+use crate::{FILE_HEADER_LEN, MAGIC_NUMBER, ECC_LEN, core::{ComponentHeader, HeaderAsContent, BlockHash, BlockInputs, BlockEnd, Content}, ReadWriteError, HEADER_LEN, ecc::{apply_ecc, calc_ecc_data_len}, HASH_AND_ECC_LEN, DATA_SIZE, HeaderTag, HASH_LEN, ComponentTag, CorruptDataSegment, MN_ECC_LEN, MN_ECC};
 
 
 
@@ -110,24 +112,31 @@ pub fn read_hash<RW:  std::io::Write + std::io::Read + std::io::Seek>(reader_wri
 }
 
 ///This will read the data from the file and into the given destination writer.
-pub fn load_content<RW:std::io::Write + std::io::Read + std::io::Seek,W:std::io::Write>(reader_writer:&mut RW,dest:&mut W,content_info:&Content)->Result<(),ReadWriteError>{
-    let Content { data_len, data_start,  ..} = *content_info;
+pub fn load_content<RW:std::io::Write + std::io::Read + std::io::Seek,W:std::io::Write>(reader_writer:&mut RW,dest:&mut W,content_info:&HeaderAsContent)->Result<(),ReadWriteError>{
+    let HeaderAsContent { data_len, data_start,  ..} = *content_info;
     reader_writer.seek(std::io::SeekFrom::Start(data_start))?;
     copy_n(reader_writer, dest, data_len as usize)?;
     Ok(())
 }
-/// This is used to during block verification. It does not error correct, since on the first read through we rather just hash it, since ecc is expensive.
+/// This is used to during block verification.
 /// Reader should be position at the start of the content portion (ecc bytes if present, else the data bytes).
-pub fn read_content<RW:std::io::Write + std::io::Read + std::io::Seek, B:BlockInputs>(reader_writer:&mut RW,content_info:&Content,error_correct:bool,hasher:&mut B)->Result<(usize,Vec<CorruptDataSegment>),ReadWriteError>{
-    let Content { data_len, data_start, ecc , ..} = *content_info;
+pub fn check_read_content<RW:std::io::Write + std::io::Read + std::io::Seek, B:BlockInputs>(reader_writer:&mut RW,content_info:&HeaderAsContent,error_correct:bool,hasher:&mut B)->Result<(usize,Vec<CorruptDataSegment>,Content),ReadWriteError>{
+    let HeaderAsContent { data_len, data_start, ecc, compressed } = *content_info;
     let ecc_len = if ecc{calc_ecc_data_len(data_len as usize)}else{0};
     let to_read = data_len as usize + ecc_len;
     let cursor_start = data_start - ecc_len as u64;
     let mut corruption = Vec::new();
-    reader_writer.seek(std::io::SeekFrom::Start(cursor_start))?;//should already be positioned here
     if !ecc || (ecc && !error_correct) {
+        let content = if compressed{
+            reader_writer.seek(std::io::SeekFrom::Start(data_start))?;
+            let mut len = [0u8;4];
+            reader_writer.read_exact(&mut len)?;
+            Content{ data_len, data_start, ecc, compressed: Some(u32::from_be_bytes(len)) }
+        }else{Content{ data_len, data_start, ecc, compressed: None }};
+
+        reader_writer.seek(std::io::SeekFrom::Start(cursor_start))?;
         buffer_hash(reader_writer, to_read as usize, hasher)?;
-        return Ok((0,corruption))
+        return Ok((0,corruption,content))
     }
     let num_chunks = ecc_len/ECC_LEN;
     let mut ecc_data = vec![0u8;ecc_len];
@@ -161,9 +170,28 @@ pub fn read_content<RW:std::io::Write + std::io::Read + std::io::Seek, B:BlockIn
             },
         }
     }
+    let content = if compressed{
+        reader_writer.seek(std::io::SeekFrom::Start(data_start))?;
+        let mut len = [0u8;4];
+        reader_writer.read_exact(&mut len)?;
+        Content{ data_len, data_start, ecc, compressed: Some(u32::from_be_bytes(len)) }
+    }else{Content{ data_len, data_start, ecc, compressed: None }};
     reader_writer.seek(std::io::SeekFrom::Start(cursor_start))?;
     buffer_hash(reader_writer, to_read, hasher)?;
-    Ok((tot_errors, corruption))
+    Ok((tot_errors, corruption,content))
+}
+
+pub fn read_content<W:std::io::Write,R:std::io::BufRead + std::io::Seek, B:BlockInputs>(src:&mut R,sink:&mut W,content_info:&Content)->Result<usize,ReadWriteError>{
+    let Content { data_len, data_start, compressed, .. } = *content_info;    
+    if let Some(decomp_len) = compressed{
+        src.seek(std::io::SeekFrom::Start(data_start+4))?;
+        let mut dec = Decoder::with_buffer(src)?;
+        copy_n(&mut dec, sink, decomp_len as usize)?;
+        Ok(decomp_len as usize)
+    }else{
+        copy_n(src, sink, data_len as usize)?;
+        Ok(data_len as usize)
+    }
 }
 
 pub fn buffer_hash<R:std::io::Read, B:BlockInputs>(reader:&mut R,mut num_bytes:usize,hasher:&mut B)->std::io::Result<()>{
@@ -223,22 +251,23 @@ pub fn read_block_middle<RW:std::io::Write + std::io::Read + std::io::Seek, B:Bl
             HeaderTag::CCComponent |
             HeaderTag::CECComponent |
             HeaderTag::CEComponent => {
-                let content = header.as_content();
-                match read_content(reader_writer, &content, error_correct_content,&mut hasher) {
-                    Ok((errs,cc)) => {
-                        let Content { data_len, data_start, ecc } = content;
+                let h_content = header.as_content();
+                let content = match check_read_content(reader_writer, &h_content, error_correct_content,&mut hasher) {
+                    Ok((errs,cc,content)) => {
+                        let Content { data_len, data_start, ecc, .. } = content.clone();
                         errors_corrected += errs;
                         if !ecc && error_correct_content {
                             corrupted_content_blocks.push(CorruptDataSegment::MaybeCorrupt { data_start, data_len })
                         }else{
                             corrupted_content_blocks.extend_from_slice(cc.as_slice());
                         }
+                        content
                     },
                     Err(ReadWriteError::EndOfFile) => {
                         return Ok(BlockMiddleState::UnexpectedEof { last_good_component_end,hash_at_last_good_component,content:middle})
                     },
                     Err(e)=>return Err(e)
-                }
+                };
                 middle.push((header,content));
             },
             HeaderTag::EndBlock => {

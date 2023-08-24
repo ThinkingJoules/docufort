@@ -50,13 +50,13 @@ pub fn generate_test_file() -> Cursor<Vec<u8>> {
 
     // Write 3 Content Components
     if log_pos {println!("CONTENT COMPONENT START: {}",cursor.position())};
-    write_content_component(&mut cursor, false,None, B_CONTENT, &mut hasher).unwrap();
+    write_content_component(&mut cursor, false,None, None,B_CONTENT, &mut hasher).unwrap();
     
     if log_pos {println!("CONTENT COMPONENT START: {}",cursor.position())};
-    write_content_component(&mut cursor, true,None, B_CONTENT, &mut hasher).unwrap();
+    write_content_component(&mut cursor, true,None, None,B_CONTENT, &mut hasher).unwrap();
     
     if log_pos {println!("CONTENT COMPONENT START: {}",cursor.position())};
-    write_content_component(&mut cursor, false,None, B_CONTENT, &mut hasher).unwrap();
+    write_content_component(&mut cursor, false,None, None,B_CONTENT, &mut hasher).unwrap();
 
 
     let b_block_hash = hasher.finalize();
@@ -66,12 +66,12 @@ pub fn generate_test_file() -> Cursor<Vec<u8>> {
     if log_pos {println!("MN START: {}",cursor.position())};
     write_magic_number(&mut cursor).unwrap();
     if log_pos {println!("BLOCK START: {}",cursor.position())};
-    write_atomic_block::<_,DummyInput>(&mut cursor, None, A_CONTENT, false, None).unwrap();
+    write_atomic_block::<_,DummyInput>(&mut cursor, None, A_CONTENT, false, None,None).unwrap();
     
     if log_pos {println!("MN START: {}",cursor.position())};
     write_magic_number(&mut cursor).unwrap();
     if log_pos {println!("BLOCK START: {}",cursor.position())};
-    write_atomic_block::<_,DummyInput>(&mut cursor, None, A_CONTENT, true, None).unwrap();
+    write_atomic_block::<_,DummyInput>(&mut cursor, None, A_CONTENT, true, None,None).unwrap();
 
 
     cursor

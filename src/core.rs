@@ -23,12 +23,15 @@ impl ComponentHeader {
     }
     ///This is a bit like a transmute
     ///We interpret the header regardless of tag type as carrying content info
-    pub fn as_content(&self)->Content{
+    ///The header doesn't carry the uncompressed info, so that must be added later. Some/None used as boolean
+    pub fn as_content(&self)->HeaderAsContent{
         let data_len = u32::from_le_bytes(self.data());
-        let has_ecc = self.tag().has_ecc();
+        let tag = self.tag();
+        let has_ecc = tag.has_ecc();
+        let compressed = tag.is_comp();
         let end_pos = self.1 + (HEADER_LEN + ECC_LEN) as u64;
         let data_start = if has_ecc {calc_ecc_data_len(data_len as usize) as u64+end_pos}else{end_pos};
-        Content{ data_len, data_start, ecc:has_ecc }
+        HeaderAsContent{ data_len, data_start, ecc:has_ecc, compressed}
     }
     pub fn tag(&self)->HeaderTag{
         self.0[0].into()
@@ -79,10 +82,18 @@ impl Block {
 }
 
 #[derive(Copy,Debug,Clone,PartialEq,Eq,PartialOrd,Ord)]
+pub struct HeaderAsContent {
+    pub data_len: u32,
+    pub data_start:u64,
+    pub ecc: bool,
+    pub compressed: bool
+}
+#[derive(Copy,Debug,Clone,PartialEq,Eq,PartialOrd,Ord)]
 pub struct Content {
     pub data_len: u32,
     pub data_start:u64,
-    pub ecc: bool
+    pub ecc: bool,
+    pub compressed: Option<u32>
 }
 /// A structure representing the end of a block in the data storage.
 #[derive(Copy,Debug,Clone,PartialEq,Eq,PartialOrd,Ord)]

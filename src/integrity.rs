@@ -14,6 +14,8 @@ pub struct IntegrityCheckOk{
     pub errors_corrected: usize,
     ///Number of bytes of 'Content' (without ECC data counted) in the file.
     pub data_contents: u64,
+    ///Number of bytes of 'Content' in the compressed form (no ECC counted).
+    pub data_size_on_disk: u64,
     ///Number of Blocks in file
     pub num_blocks:usize,
     ///This is the index up to which we checked
@@ -58,6 +60,7 @@ pub fn integrity_check_file<B: BlockInputs>(file_path: &std::path::Path) -> Resu
     let mut file_len = file.metadata()?.len();
     let mut errors_corrected = 0;
     let mut data_contents = 0;
+    let mut data_size_on_disk = 0;
     let mut num_blocks = 0;
     let mut corrupted_segments = Vec::new();
     let mut block_times = Vec::new();
@@ -81,8 +84,24 @@ pub fn integrity_check_file<B: BlockInputs>(file_path: &std::path::Path) -> Resu
                 errors_corrected += e;
                 corrupted_segments.extend_from_slice(corrupted_content_blocks.as_slice());
                 match block {
-                    Block::A { middle, .. } => data_contents += middle.data_len as u64,
-                    Block::B { middle, .. } => middle.iter().for_each(|(_,c)|data_contents+=c.data_len as u64),
+                    Block::A { middle, .. } => {
+                        if let Some(decomp_len) = middle.compressed {
+                            data_contents += decomp_len as u64;
+                            data_size_on_disk += middle.data_len as u64;
+                        }else{
+                            data_contents += middle.data_len as u64;
+                            data_size_on_disk += middle.data_len as u64;
+                        }
+                    },
+                    Block::B { middle, .. } => middle.iter().for_each(|(_,c)|{
+                        if let Some(decomp_len) = c.compressed {
+                            data_contents += decomp_len as u64;
+                            data_size_on_disk += c.data_len as u64;
+                        }else{
+                            data_contents += c.data_len as u64;
+                            data_size_on_disk += c.data_len as u64;
+                        }
+                    }),
                 }
                 num_blocks += 1;
                 block_times.push((*block_start,*block_start_timestamp))
@@ -115,6 +134,7 @@ pub fn integrity_check_file<B: BlockInputs>(file_path: &std::path::Path) -> Resu
         last_block_state: last_state,
         errors_corrected,
         data_contents,
+        data_size_on_disk,
         num_blocks,
         file_len_checked: file_len,
         corrupted_segments,

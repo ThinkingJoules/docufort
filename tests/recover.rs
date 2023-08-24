@@ -11,13 +11,13 @@ fn test_block_1_hash() {
     let mut cursor = Cursor::new(Vec::new());
 
     println!("CONTENT COMPONENT START: {}",cursor.position());
-    write_content_component(&mut cursor, false,None, B_CONTENT, &mut hasher).unwrap();
+    write_content_component(&mut cursor, false,None,None, B_CONTENT, &mut hasher).unwrap();
     
     println!("CONTENT COMPONENT START: {}",cursor.position());
-    write_content_component(&mut cursor, true,None, B_CONTENT, &mut hasher).unwrap();
+    write_content_component(&mut cursor, true,None, None,B_CONTENT, &mut hasher).unwrap();
     
     println!("CONTENT COMPONENT START: {}",cursor.position());
-    write_content_component(&mut cursor, false,None, B_CONTENT, &mut hasher).unwrap();
+    write_content_component(&mut cursor, false,None, None,B_CONTENT, &mut hasher).unwrap();
     assert_eq!(hasher.finalize(),BLOCK_1_HASH);
 }
 #[test]
@@ -85,8 +85,9 @@ fn test_try_read_block_3_data_recovery() {
             assert_eq!(&hash_as_read[..],block.clone().take_end().hash.hash());
             assert_eq!(errors_corrected,2);
             if let Block::A { middle, .. } = block {
-                let Content{ data_len, data_start, ecc } = middle;
+                let Content{ data_len, data_start, ecc, compressed } = middle;
                 assert!(ecc);
+                assert!(compressed.is_none());
                 cursor.set_position(data_start);
                 let mut data = vec![0u8;data_len as usize];
                 cursor.read_exact(&mut data).unwrap();
