@@ -111,13 +111,6 @@ pub fn read_hash<RW:  std::io::Write + std::io::Read + std::io::Seek>(reader_wri
     Ok((errors,BlockHash::new(hash)))
 }
 
-///This will read the data from the file and into the given destination writer.
-pub fn load_content<RW:std::io::Write + std::io::Read + std::io::Seek,W:std::io::Write>(reader_writer:&mut RW,dest:&mut W,content_info:&HeaderAsContent)->Result<(),ReadWriteError>{
-    let HeaderAsContent { data_len, data_start,  ..} = *content_info;
-    reader_writer.seek(std::io::SeekFrom::Start(data_start))?;
-    copy_n(reader_writer, dest, data_len as usize)?;
-    Ok(())
-}
 /// This is used to during block verification.
 /// Reader should be position at the start of the content portion (ecc bytes if present, else the data bytes).
 pub fn check_read_content<RW:std::io::Write + std::io::Read + std::io::Seek, B:BlockInputs>(reader_writer:&mut RW,content_info:&HeaderAsContent,error_correct:bool,hasher:&mut B)->Result<(usize,Vec<CorruptDataSegment>,Content),ReadWriteError>{
@@ -189,6 +182,7 @@ pub fn read_content<W:std::io::Write,R:std::io::BufRead + std::io::Seek, B:Block
         copy_n(&mut dec, sink, decomp_len as usize)?;
         Ok(decomp_len as usize)
     }else{
+        src.seek(std::io::SeekFrom::Start(data_start))?;
         copy_n(src, sink, data_len as usize)?;
         Ok(data_len as usize)
     }

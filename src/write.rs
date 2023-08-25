@@ -155,23 +155,23 @@ pub fn write_block_hash<W: std::io::Write>(writer: &mut W,hash:&[u8;HASH_LEN])->
 }
 
 ///Writes Header + Content Component, optionally computes ECC
-pub fn write_content_component<W: std::io::Write,B:BlockInputs>(writer: &mut W,calc_ecc:bool,compress:Option<CompressionLevel>,time_stamp: Option<u64>,content:&[u8],hasher:&mut B)->Result<(),ReadWriteError>{
-    let (content,is_compressed) = if let Some(cl) = compress {
+pub fn write_content_component<W: std::io::Write,B:BlockInputs>(writer: &mut W,calc_ecc:bool,compress:Option<CompressionLevel>,time_stamp: Option<u64>,content:&[u8],hasher:&mut B)->Result<(usize,bool),ReadWriteError>{
+    let (content_to_write,is_compressed) = if let Some(cl) = compress {
         let data_len = content.len();
         let mut v = vec![0u8;data_len+4];//we need to allocate given the nature of needing to do ECC yet. TODO: Figure out how not to
         match compress_to_buffer(content, &mut v[4..], cl) {
             Ok(n) if n < data_len => {
                 v.truncate(n+4);
                 use std::io::Write;
-                (&mut v[0..3]).write_all(&(data_len as u32).to_be_bytes()).unwrap();
+                (&mut v[0..4]).write_all(&(data_len as u32).to_be_bytes()).unwrap();
                 (Cow::Owned(v),true)
             },
             _ => (Cow::Borrowed(content),false),
         }
     }else{(Cow::Borrowed(content),false)};
-    write_content_header(writer, content.len() as u32,calc_ecc,is_compressed,time_stamp,hasher)?;
-    write_content(writer, content.as_ref(), calc_ecc, hasher)?;
-    Ok(())
+    write_content_header(writer, content_to_write.len() as u32,calc_ecc,is_compressed,time_stamp,hasher)?;
+    write_content(writer, content_to_write.as_ref(), calc_ecc, hasher)?;
+    Ok((content_to_write.len(),is_compressed))
 }
 
 ///Writes Header + Content Component, optionally computes ECC
@@ -216,7 +216,7 @@ pub fn write_atomic_block<W: std::io::Write,B:BlockInputs>(writer: &mut W,start_
 
 #[cfg(test)]
 mod test_super {
-    use crate::HeaderTag;
+    use crate::{HeaderTag, HEADER_LEN, core::Content, read::read_content};
     use super::*;
     use std::io::Cursor;
 
@@ -347,6 +347,56 @@ mod test_super {
         assert_eq!(&data[9..13],[10,0,0,0]);
         assert_eq!(&data[13+ECC_LEN*2..23+ECC_LEN*2],&content[..10]);
         assert_eq!(&data[13+(ECC_LEN*2)+content.len()..14+(ECC_LEN*2)+content.len()],&[HeaderTag::EndBlock as u8]);
+
+    }
+    #[test]
+    fn test_write_b_block_ecc() {
+        let mut writer = Cursor::new(Vec::new());
+        let start_time_stamp = u64::from_be_bytes([1u8;8]);
+        let end_time_stamp = [2u8;8];
+        let content = [0u8;50];
+        let end_block = ComponentHeader::new_from_parts(HeaderTag::EndBlock as u8, end_time_stamp, None);
+        let start = ComponentHeader::new_from_parts(HeaderTag::StartBBlock as u8, start_time_stamp.to_be_bytes(), None);
+        
+        let mut h = DummyHasher::new();
+        write_header(&mut writer, &start).unwrap();
+        write_content_component(&mut writer, true,None,Some(start_time_stamp),&content,&mut h).unwrap();
+        write_block_end(&mut writer,&end_block,&h.finalize()).unwrap();
+
+        let data = writer.into_inner();
+        assert_eq!(data[0],HeaderTag::StartBBlock as u8);
+        assert_eq!(&data[1..9],[1u8;8]);
+        assert_eq!(&data[9..13],[0,0,0,0]);
+        assert_eq!(data[HEADER_LEN+ECC_LEN],HeaderTag::CEComponent as u8);
+        assert_eq!(&data[(HEADER_LEN+ECC_LEN)*2+ECC_LEN..(HEADER_LEN+ECC_LEN)*2 +ECC_LEN + 10],&content[..10]);
+
+    }
+    #[test]
+    fn test_write_b_block_ecc_comp() {
+        let mut writer = Cursor::new(Vec::new());
+        let start_time_stamp = u64::from_be_bytes([1u8;8]);
+        let end_time_stamp = [2u8;8];
+        let data = [3u8;50];
+        let end_block = ComponentHeader::new_from_parts(HeaderTag::EndBlock as u8, end_time_stamp, None);
+        let start = ComponentHeader::new_from_parts(HeaderTag::StartBBlock as u8, start_time_stamp.to_be_bytes(), None);
+        
+        let mut h = DummyHasher::new();
+        write_header(&mut writer, &start).unwrap();
+        let (content_len,is_comp) = write_content_component(&mut writer, true,Some(22),Some(start_time_stamp),&data,&mut h).unwrap();
+        write_block_end(&mut writer,&end_block,&h.finalize()).unwrap();
+
+        let inner = writer.into_inner();
+        dbg!(inner.len(), &inner);
+        assert!(is_comp);
+        assert_eq!(inner[0],HeaderTag::StartBBlock as u8);
+        assert_eq!(&inner[1..9],[1u8;8]);
+        assert_eq!(&inner[9..13],[0,0,0,0]);
+        assert_eq!(inner[HEADER_LEN+ECC_LEN],HeaderTag::CECComponent as u8);
+        let content = Content{ data_len: content_len as u32, data_start:( (HEADER_LEN+ECC_LEN)*2+ECC_LEN) as u64, ecc: true, compressed: Some(50) };
+        let mut crsr = Cursor::new(inner);
+        let mut out = Vec::new();
+        read_content::<_,_,DummyHasher>(&mut crsr, &mut out, &content).unwrap();
+        assert_eq!(&data[..],&out);
 
     }
 
