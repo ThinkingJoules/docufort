@@ -1,8 +1,9 @@
 /*!
 This module should follow the inverse of the [write module](crate::write).
-We always write to the file if we find errors reading system messages.
+We *always* write to the file if we find errors reading system messages.
+Hence the Read + Write trait bounds for the RW generic that represents the docufort file.
 
-Content error correction happens at a higher level.
+*Content* error correction happens at a higher level.
 */
 
 
@@ -20,7 +21,7 @@ use crate::{FILE_HEADER_LEN, MAGIC_NUMBER, ECC_LEN, core::{ComponentHeader, Head
 /// Returns an `std::io::Error` if:
 ///
 /// - Read Error from Reader
-/// 
+///
 /// Return Ok(true) if everything matches, and Ok(false) if something mis-matches
 pub fn verify_configs<R:std::io::Read>(file: &mut R) -> std::io::Result<bool> {
     // Create a buffer large enough for all data
@@ -175,7 +176,7 @@ pub fn check_read_content<RW:std::io::Write + std::io::Read + std::io::Seek, B:B
 }
 
 pub fn read_content<W:std::io::Write,R:std::io::BufRead + std::io::Seek, B:BlockInputs>(src:&mut R,sink:&mut W,content_info:&Content)->Result<usize,ReadWriteError>{
-    let Content { data_len, data_start, compressed, .. } = *content_info;    
+    let Content { data_len, data_start, compressed, .. } = *content_info;
     if let Some(decomp_len) = compressed{
         src.seek(std::io::SeekFrom::Start(data_start+4))?;
         let mut dec = Decoder::with_buffer(src)?;
@@ -196,7 +197,7 @@ pub fn buffer_hash<R:std::io::Read, B:BlockInputs>(reader:&mut R,mut num_bytes:u
         if bytes_read > 0 {
             hasher.update(&buf[..bytes_read]);
         }else{// 0 == EOF
-            return Err(std::io::Error::new(std::io::ErrorKind::UnexpectedEof, "Unexpected end of file").into());       
+            return Err(std::io::Error::new(std::io::ErrorKind::UnexpectedEof, "Unexpected end of file").into());
         }
         num_bytes -= bytes_read;
     }
@@ -212,7 +213,7 @@ pub enum BlockMiddleState{
 }
 
 /// This is a wrapper to just keep reading all the content.
-/// If hasher is Some, this will hash && !ecc, if none it will !hash && ecc. 
+/// If hasher is Some, this will hash && !ecc, if none it will !hash && ecc.
 /// The reader should be positioned after reading a BBlockStart header
 pub fn read_block_middle<RW:std::io::Write + std::io::Read + std::io::Seek, B:BlockInputs>(reader_writer:&mut RW,error_correct_header:bool,error_correct_content:bool)->Result<BlockMiddleState,ReadWriteError>{
     let mut middle = Vec::new();
@@ -285,7 +286,7 @@ pub fn read_block_middle<RW:std::io::Write + std::io::Read + std::io::Seek, B:Bl
         }
     }
 
-} 
+}
 
 fn copy_n<R: std::io::Read, W: std::io::Write>(reader: &mut R, writer: &mut W, n: usize) -> std::io::Result<()> {
     const BUFFER_SIZE: usize = 4096;

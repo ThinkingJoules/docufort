@@ -1,3 +1,8 @@
+//! This module contains the integrity check function for a docufort file.
+//!
+//! This will read the file from the beginning to the end, checking the integrity of the file.
+//! It will attempt to correct any errors it finds in the data using any available ECC data.
+
 use std::{io::{SeekFrom, Seek}, fs::OpenOptions};
 
 use crate::{core::{BlockState, BlockInputs, Block}, ReadWriteError, ComponentTag, read::{verify_configs, read_magic_number}, recovery::{try_read_block, BlockReadSummary}, CorruptDataSegment};
@@ -27,12 +32,12 @@ pub struct IntegrityCheckOk{
     pub corrupted_segments: Vec<CorruptDataSegment>,
     ///Contains the block start position and the time stamp found there
     pub block_times: Vec<(u64,u64)>
-    
+
 }
 #[derive(Debug)]
 pub enum IntegrityErr{
     Other(ReadWriteError),
-    ///This only returns if a Component Header (or hash) is corrupted. 
+    ///This only returns if a Component Header (or hash) is corrupted.
     ///We cannot process the file any farther. We only read Front to Back so the position is all the farther we checked the file.
     ///The file may still be able to succeed at tail recovery if this corruption is earlier than the second to last block.
     ///If found in the last block, then a tail recovery would truncate this block.
@@ -108,7 +113,7 @@ pub fn integrity_check_file<B: BlockInputs>(file_path: &std::path::Path) -> Resu
                 // let BlockEnd { hash, .. } = block.clone().take_end();
                 // assert_eq!(&hash_as_read[..],hash.hash());//impl assertion since we are error correcting every block
             },
-            BlockState::OpenABlock { truncate_at } | 
+            BlockState::OpenABlock { truncate_at } |
             BlockState::OpenBBlock { truncate_at, .. } => {
                 //We set the file_len to reflect how far we have integrity checked
                 file_len = *truncate_at;

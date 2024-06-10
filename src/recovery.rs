@@ -1,3 +1,8 @@
+/*! This module contains functions for recovering the end of a docufort file.
+
+This is used at startup to determine a new end of the file after a crash or power loss.
+*/
+
 use std::fs::OpenOptions;
 use std::io::{SeekFrom, Seek};
 
@@ -37,7 +42,7 @@ pub fn find_block_start<RW: std::io::Read + std::io::Write + std::io::Seek>(file
     let end_index = start_pos - MN_ECC_LEN as u64;
     // Iterate over the file in reverse, one byte at a time
     for start_index in (FILE_HEADER_LEN as u64..=end_index).rev() {
-        file.seek(SeekFrom::Start(start_index))?;  
+        file.seek(SeekFrom::Start(start_index))?;
 
         file.read_exact(&mut buff)?;
         match apply_ecc(&mut buff) {
@@ -46,17 +51,17 @@ pub fn find_block_start<RW: std::io::Read + std::io::Write + std::io::Seek>(file
             },
             _ => {
                 // Move back last read an additional byte for the next iteration
-                file.seek(SeekFrom::Current(-(1+MN_ECC_LEN as i64)))?;  
+                file.seek(SeekFrom::Current(-(1+MN_ECC_LEN as i64)))?;
                 continue
             },
-        }        
+        }
     }
     Ok(0)
 }
 
 
 /// Reader should be positioned at the start of a header (after the magic number).
-/// This function will hash, and optionally it will ecc the headers and or the content. 
+/// This function will hash, and optionally it will ecc the headers and or the content.
 /// This function will intercept any relevant IO or decode Errors and return them as part of the Ok(BlockState)
 pub fn try_read_block<RW:std::io::Write + std::io::Read + std::io::Seek,B:BlockInputs>(reader_writer:&mut RW,error_correct_header:bool,error_correct_content:bool)->Result<BlockState,ReadWriteError>{
     let block_start = reader_writer.seek(std::io::SeekFrom::Current(0))?;
@@ -98,7 +103,7 @@ pub fn try_read_block<RW:std::io::Write + std::io::Read + std::io::Seek,B:BlockI
                 };
                 errors_corrected += e1+e2;
                 let hash_as_read = hasher.finalize();
-                
+
                 if !content.ecc && hash_as_read != hash.hash() && error_correct_content{
                     assert!(corrupted_content_blocks.is_empty());
                     let HeaderAsContent { data_len, data_start, .. } = start.as_content();
@@ -144,14 +149,14 @@ pub fn try_read_block<RW:std::io::Write + std::io::Read + std::io::Seek,B:BlockI
 pub struct TailRecoverySummary{
     pub original_file_len:u64,
     pub recovered_file_len:u64,
-    ///This is a list of tail block states it got from successive calls try_read_block after file manipulations.  
+    ///This is a list of tail block states it got from successive calls try_read_block after file manipulations.
     pub file_ops:Vec<(u64,BlockState)>,
     pub has_blocks:bool,
     pub tot_errors_corrected:usize,
     ///Corruption exceeds ECC for content in the following file offsets that are DATA_SIZE len
     pub corrupted_content_blocks:Vec<CorruptDataSegment>
 }
-///Recovers the end of the DocuFort file. 
+///Recovers the end of the DocuFort file.
 ///As long as the headers have corruption below the error correction ability, this will at most truncate the last block, if it is incomplete.
 ///If headers are corrupted, then it will keep truncating the end of the file until it can read a complete block.
 ///This does *not* truncate a block whose *contents* are corrupted beyond repair.
@@ -202,7 +207,7 @@ pub fn recover_tail<B:BlockInputs>(file_path: &std::path::Path) -> Result<TailRe
                     //for now, we will consider this 'recovered'
                     //the application using this should also not be able to decode the data properly.
                     let corrupted_content_blocks = corrupted_content_blocks.clone();
-                                       
+
                     return Ok(TailRecoverySummary { original_file_len, recovered_file_len:crsr_pos, file_ops, has_blocks: true, tot_errors_corrected,corrupted_content_blocks })
                 }
             },
@@ -241,7 +246,7 @@ pub fn recover_tail<B:BlockInputs>(file_path: &std::path::Path) -> Result<TailRe
                 file.set_len(*truncate_at)?;
                 file.seek(SeekFrom::End(0))?;
                 error_correct_content = false;
-                continue; //We don't know what we are, but we just try again after truncation.                
+                continue; //We don't know what we are, but we just try again after truncation.
             },
         }
     }

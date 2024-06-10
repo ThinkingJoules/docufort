@@ -1,12 +1,16 @@
+//! This module provides a helper function to find all the content written between two time stamps.
+//!
+//! If nothing else it demonstrates how to loop through documents and read content from a docufort file.
+
 use std::{io::{SeekFrom, Seek}, fs::OpenOptions, ops::RangeBounds};
 
 use crate::{core::{BlockState, BlockInputs, Block, Content}, read::read_magic_number, recovery::{try_read_block, BlockReadSummary}, FILE_HEADER_LEN, MAGIC_NUMBER, ReadWriteError, ECC_LEN};
 
 ///If start_hint it provided it should be a BlockStart header position, else we start from the first block in the file.
-///The range will only return content *written* in the range of the given time stamp. 
+///The range will only return content *written* in the range of the given time stamp.
 ///This function assumes all header timestmaps are monotonically increasing.
 ///This does no ECC on anything.
-/// 
+///
 ///It is recommended to run integrity check on startup and provide a start_hint for the first block we want content from.
 pub fn find_content<B:BlockInputs,T:RangeBounds<u64>>(file_path: &std::path::Path, start_hint: Option<u64>,range:Option<T>) -> Result<Vec<(u64,Content)>, ReadWriteError> {
     let mut file = OpenOptions::new().read(true).open(file_path)?;
@@ -44,9 +48,10 @@ pub fn find_content<B:BlockInputs,T:RangeBounds<u64>>(file_path: &std::path::Pat
                 match block {
                     Block::A { middle,start,.. } => {
                         let start_time = start.time_stamp();
+                        let ts = u64::from_be_bytes(start_time);
                         if let Some(r) = range.as_ref() {
                             if r.contains(&start_time){
-                                content.push((start_time,middle))
+                                content.push((ts,middle))
                             }else {
                                 match r.end_bound(){
                                     std::ops::Bound::Included(x) if &start_time > x => break,
@@ -55,15 +60,16 @@ pub fn find_content<B:BlockInputs,T:RangeBounds<u64>>(file_path: &std::path::Pat
                                 }
                             }
                         }else{
-                            content.push((start_time,middle))
+                            content.push((ts,middle))
                         }
                     },
                     Block::B { middle, .. } => {
                         for (s,m) in middle {
                             let start_time = s.time_stamp();
+                            let ts = u64::from_be_bytes(start_time);
                             if let Some(r) = range.as_ref() {
                                 if r.contains(&start_time){
-                                    content.push((start_time,m))
+                                    content.push((ts,m))
                                 }else {
                                     match r.end_bound(){
                                         std::ops::Bound::Included(x) if &start_time > x => break 'outer,
@@ -72,7 +78,7 @@ pub fn find_content<B:BlockInputs,T:RangeBounds<u64>>(file_path: &std::path::Pat
                                     }
                                 }
                             }else{
-                                content.push((start_time,m))
+                                content.push((ts,m))
                             }
                         }
                     },
@@ -81,9 +87,10 @@ pub fn find_content<B:BlockInputs,T:RangeBounds<u64>>(file_path: &std::path::Pat
             BlockState::OpenBBlock { content:middle, .. } => {
                 for (s,m) in middle {
                     let start_time = s.time_stamp();
+                    let ts = u64::from_be_bytes(start_time);
                     if let Some(r) = range.as_ref() {
                         if r.contains(&start_time){
-                            content.push((start_time,m))
+                            content.push((ts,m))
                         }else {
                             match r.end_bound(){
                                 std::ops::Bound::Included(x) if &start_time > x => break 'outer,
@@ -92,7 +99,7 @@ pub fn find_content<B:BlockInputs,T:RangeBounds<u64>>(file_path: &std::path::Pat
                             }
                         }
                     }else{
-                        content.push((start_time,m))
+                        content.push((ts,m))
                     }
                 }
             }
@@ -101,5 +108,5 @@ pub fn find_content<B:BlockInputs,T:RangeBounds<u64>>(file_path: &std::path::Pat
         let res = read_magic_number(&mut file, false);
         if res.is_err(){break}
     }
-    Ok(content.into_iter().map(|(ts,c)|(u64::from_be_bytes(ts),c)).collect())
+    Ok(content)
 }

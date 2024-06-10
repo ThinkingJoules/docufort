@@ -63,6 +63,7 @@ pub const HASH_LEN:usize = 20;
 ///HASH(20) + ECC_LEN
 pub const HASH_AND_ECC_LEN:usize = HASH_LEN+ECC_LEN;
 
+// Type Byte for Header
 ///Tag for an Atomic Block (b'A') with **no** ECC on content.
 pub const A_BLOCK:u8 = 0b0000_0000;
 ///Tag for a Best Effort Block (b'B')
@@ -75,7 +76,7 @@ pub const HAS_ECC:u8 = 0b0000_1000;
 pub const IS_COMP:u8 = 0b0000_0100;
 
 
-///Represents are different block types for matching against.
+///Represents our different block types for matching against.
 #[repr(u8)]
 #[derive(Copy, Clone, Debug, PartialEq, Eq)]
 pub enum HeaderTag {
@@ -196,21 +197,21 @@ impl<'a, R: std::io::Read, B: BlockInputs> std::io::Read for HashAdapter<'a, R, 
 
 #[derive(Copy, Clone, Debug, PartialEq, Eq)]
 pub enum CorruptDataSegment{
-    ///This is for corruption beyond what ECC could correct within the 255 byte block. 
-    ///The chunk len is DATA_SIZE len, and ecc is ECC_LEN, together they equal 255. 
-    ///The provided [apply_ecc](crate::ecc::apply_ecc) expects a buffer with data first, followed by the ecc data. 
-    ///The best you can do is attempt to decode and fix the content and recalculate the ECC. 
-    ///Then *carefully* rewrite all the ECC data concatenated together beginning at 
+    ///This is for corruption beyond what ECC could correct within the 255 byte block.
+    ///The chunk len is DATA_SIZE len, and ecc is ECC_LEN, together they equal 255.
+    ///The provided [apply_ecc](crate::ecc::apply_ecc) expects a buffer with data first, followed by the ecc data.
+    ///The best you can do is attempt to decode and fix the content and recalculate the ECC.
+    ///Then *carefully* rewrite all the ECC data concatenated together beginning at
     EccChunk{chunk_start:u64,chunk_ecc_start:u64,ecc_start:u64,data_start:u64,data_len:u32},
-    ///This is returned for a B block content component that does not have ECC calculated and stored. 
+    ///This is returned for a B block content component that does not have ECC calculated and stored.
     ///MaybeCorrupt is because a B Block can have more than one Content Component and if more than one does not have
-    ///ECC calculated, then we only know that the block hash mismatches but we don't know where the error is.  
+    ///ECC calculated, then we only know that the block hash mismatches but we don't know where the error is.
     ///If you have structured data within the content, you should try decoding the content to see if you can find the error.
-    ///If you can fix it, then you should *carefully* write the corrected bytes back at data_start..data_start+data_len. 
+    ///If you can fix it, then you should *carefully* write the corrected bytes back at data_start..data_start+data_len.
     MaybeCorrupt{data_start:u64,data_len:u32},
-    ///This is returned for an A block that does not have ECC calculated and stored. 
+    ///This is returned for an A block that does not have ECC calculated and stored.
     ///If you have structured data within the content, you should try decoding the content to see if you can find the error.
-    ///If you can fix it, then you should *carefully* write the corrected bytes back at data_start..data_start+data_len. 
+    ///If you can fix it, then you should *carefully* write the corrected bytes back at data_start..data_start+data_len.
     Corrupt{data_start:u64,data_len:u32}
 }
 #[cfg(test)]

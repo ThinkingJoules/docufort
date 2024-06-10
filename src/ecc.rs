@@ -51,7 +51,7 @@ pub fn apply_ecc(ecc_data: &mut[u8]) -> Result<usize,DecoderError> {
         Ok(0)
     }
 }
-///This assume the ecc_data is before the msg_data, as the case for the 'content'
+///This assumes the ecc_data is before the msg_data, as the case for the 'content'
 pub fn apply_ecc_for_chunks(raw_data: &mut [u8]) -> Result<usize, DecoderError> {
     let len = raw_data.len();
     let msg_len = calculate_msg_len(len);
@@ -142,7 +142,7 @@ mod tests {
         // Verify that the expected number of errors were corrected
         assert_eq!(combined, corrupted);
     }
-   
+
     #[test]
     fn test_calculate_ecc_for_chunks() {
         let data: Vec<u8> = vec![128;500]; // Two chunks
