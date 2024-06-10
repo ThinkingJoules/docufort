@@ -17,8 +17,6 @@ Or you could wrap it in a struct that stores the return values and a file handle
 
 use std::fmt::Debug;
 
-use zstd::zstd_safe::CompressionLevel;
-
 use crate::{core::{BlockInputs, ComponentHeader}, write::{write_magic_number, write_header, write_block_hash, write_atomic_block, write_content_component}, HeaderTag, ReadWriteError};
 
 
@@ -31,21 +29,21 @@ pub enum Op<T:AsRef<[u8]>> {
     ///If a BlockStart needs to be written then it's timestamp will come from the Operation
     ContentWrite(T,Option<u64>),
 }
-pub struct Operation<T:AsRef<[u8]>>{
+pub struct Operation<T:AsRef<[u8]>,C>{
     pub op:Op<T>,
     ///This is basically always the header for the Op.
     ///If the Op is ContentWrite, then this is 'BlockStart'
     pub timestamp:Option<u64>,
     pub calc_ecc:bool,
-    pub compress:Option<CompressionLevel>
+    pub compress:Option<C>
 }
 
 #[derive(Debug)]
 enum InnerOp<T:AsRef<[u8]>,B:BlockInputs> {
     WriteMagicNumber,
-    WriteABlock{time_stamp:u64,content: T, calc_ecc: bool, compress:Option<CompressionLevel> },
+    WriteABlock{time_stamp:u64,content: T, calc_ecc: bool, compress:Option<B::CompLevel> },
     WriteBBlockStart{time_stamp:[u8;8]},
-    WriteContentComponent{time_stamp:u64,content: T, calc_ecc: bool, compress:Option<CompressionLevel>,hasher:Option<B>},
+    WriteContentComponent{time_stamp:u64,content: T, calc_ecc: bool, compress:Option<B::CompLevel>,hasher:Option<B>},
     WriteEndHeader{time_stamp:Option<[u8;8]>,hasher:Option<B>},
     WriteHash(Option<B>)
 }
@@ -57,8 +55,8 @@ impl<T: AsRef<[u8]>, B: BlockInputs> InnerOp<T, B> {
             InnerOp::WriteEndHeader { hasher:b, .. } |
             InnerOp::WriteHash(b) =>{let _ = b.insert(hasher);},
             _ => ()
-            
-            
+
+
         }
     }
 }
@@ -97,14 +95,14 @@ impl<B> TailState<B> {
 pub fn perform_file_op<RWS, T, B>(
     file: &mut RWS,
     tail: TailState<B>,
-    oper: Operation<T>,
+    oper: Operation<T,B::CompLevel>,
     mut write_attempts:usize
 ) -> Result<TailState<B>,Vec<ReadWriteError>>//outer error is unrecoverable
 where
     RWS: std::io::Read + std::io::Write + std::io::Seek,
     T: AsRef<[u8]>+Debug,
     B: BlockInputs+Debug,
-{    
+{
     let Operation { op, timestamp, calc_ecc, compress } = oper;
     //let time_stamp = timestamp.map(|u|u.to_be_bytes());
     let (tail_state,inner_ops) = match (tail,op) {
@@ -138,7 +136,7 @@ where
                 ]
             )
         },
-        
+
         (clean, Op::CloseBlock) => {
             //No Op
             return Ok(clean)
@@ -196,7 +194,7 @@ where
     RWS: std::io::Read + std::io::Write + std::io::Seek,
     T: AsRef<[u8]>+Debug,
     B: BlockInputs+Debug,
-{    
+{
     let InnerOperation { inner, start_offset } = oper;
     let start_offset = if let Some(start) = start_offset{
         match file.seek(std::io::SeekFrom::Start(start)){
@@ -217,8 +215,8 @@ where
             Ok(None)
         },
         InnerOp::WriteABlock{ time_stamp, calc_ecc, content, compress } => {
-            
-            if let Err(e) = write_atomic_block::<_,B>(file,Some(time_stamp),content.as_ref(),calc_ecc,compress,None) {
+
+            if let Err(e) = write_atomic_block::<_,B>(file,Some(time_stamp),content.as_ref(),calc_ecc,compress.as_ref(),None) {
                 return Err((InnerOperation{ inner:InnerOp::WriteABlock{ time_stamp, calc_ecc, content, compress }, start_offset:Some(start_offset) },e))
             }
             Ok(None)
@@ -234,7 +232,7 @@ where
         InnerOp::WriteContentComponent { time_stamp, content, calc_ecc, compress, hasher } => {
             let mut b = if let Some(b) = hasher {b}else{B::new()};
             let hasher = Some(b.clone());//preserve hash state in case of failure
-            if let Err(e) = write_content_component(file,calc_ecc,compress,Some(time_stamp),content.as_ref(),&mut b) {
+            if let Err(e) = write_content_component(file,calc_ecc,compress.as_ref(),Some(time_stamp),content.as_ref(),&mut b) {
                 return Err((InnerOperation{ inner:InnerOp::WriteContentComponent {  time_stamp, content, calc_ecc, compress, hasher}, start_offset:Some(start_offset) },e))
             }
             Ok(Some(b))
@@ -273,30 +271,41 @@ mod test_super {
                 hasher: blake3::Hasher::new(),
             }
         }
-    
+
         fn update(&mut self, data: &[u8]) {
             self.hasher.update(data);
         }
-    
+
         fn finalize(&self) -> [u8; HASH_LEN] {
             let hash = self.hasher.finalize();
             let mut result = [0u8; HASH_LEN];
             result.copy_from_slice(&hash.as_bytes()[..HASH_LEN]);
             result
         }
-    
+
         fn current_timestamp() -> u64{
             u64::from_be_bytes([7, 6, 5, 4, 3, 2, 1, 0])
         }
+
+        type CompLevel= i32;
+
+        fn compress<W:std::io::Write>(_data: &[u8], _writer: &mut W, _comp_level: &Self::CompLevel) -> std::io::Result<usize> {
+            unimplemented!()
+        }
+
+        fn decompress<R:std::io::Read,W:std::io::Write>(_compressed: &mut R, _sink: &mut W,_s:u32) -> std::io::Result<usize> {
+            unimplemented!()
+        }
+
     }
-    
+
     use std::io::Cursor;
     use crate::*;
     use crate::write::*;
-    
+
     pub const B_CONTENT:&[u8;12] = b"Some content";
     pub const A_CONTENT:&[u8;14] = b"Atomic content";
-    
+
     pub fn generate_test_file() -> Cursor<Vec<u8>> {
         let mut cursor = Cursor::new(Vec::new());
         let mut hasher = DummyInput::new();
@@ -305,38 +314,38 @@ mod test_super {
         init_file(&mut cursor).unwrap();
         if log_pos {println!("MN START: {}",cursor.position())};
         write_magic_number(&mut cursor).unwrap();
-    
+
         // Write BlockStart for Best Effort Block
         if log_pos {println!("BLOCK START: {}",cursor.position())};
         let b_block_header = ComponentHeader::new_from_parts(HeaderTag::StartBBlock as u8, DummyInput::current_timestamp().to_be_bytes(), None);
         write_header(&mut cursor, &b_block_header).unwrap();
-    
+
         // Write 3 Content Components
         if log_pos {println!("CONTENT COMPONENT START: {}",cursor.position())};
         write_content_component(&mut cursor, false,None,None, B_CONTENT, &mut hasher).unwrap();
-        
+
         if log_pos {println!("CONTENT COMPONENT START: {}",cursor.position())};
         write_content_component(&mut cursor, true,None,None, B_CONTENT, &mut hasher).unwrap();
-        
+
         if log_pos {println!("CONTENT COMPONENT START: {}",cursor.position())};
         write_content_component(&mut cursor, false,None,None, B_CONTENT, &mut hasher).unwrap();
-    
-    
+
+
         let b_block_hash = hasher.finalize();
         let block_end_header = ComponentHeader::new_from_parts(HeaderTag::EndBlock as u8, DummyInput::current_timestamp().to_be_bytes(), None);
         write_block_end(&mut cursor, &block_end_header, &b_block_hash).unwrap();
-        
+
         if log_pos {println!("MN START: {}",cursor.position())};
         write_magic_number(&mut cursor).unwrap();
         if log_pos {println!("BLOCK START: {}",cursor.position())};
         write_atomic_block::<_,DummyInput>(&mut cursor, None, A_CONTENT, false, None,None).unwrap();
-        
+
         if log_pos {println!("MN START: {}",cursor.position())};
         write_magic_number(&mut cursor).unwrap();
         if log_pos {println!("BLOCK START: {}",cursor.position())};
         write_atomic_block::<_,DummyInput>(&mut cursor, None, A_CONTENT, true, None,None).unwrap();
-    
-    
+
+
         cursor
     }
     use crate::write::init_file;

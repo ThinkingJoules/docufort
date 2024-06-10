@@ -1,6 +1,6 @@
 [package]
 name = "docufort"
-version = "0.3.0"
+version = "0.4.0"
 edition = "2021"
 repository = "https://github.com/ThinkingJoules/docufort"
 description = "A toolbox for the docufort crash fault-tolerant append only file format."
@@ -10,10 +10,10 @@ categories = ["filesystems","data-structures","encoding"]
 
 [dependencies]
 reed-solomon = "0.2.1"
-zstd = "0.12.4"
 
 [dev-dependencies]
 blake3 = "1.5.1"
+zstd = "0.12.4"
 
 [features]
 ecc_len_2 = []

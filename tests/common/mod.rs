@@ -25,6 +25,31 @@ impl BlockInputs for DummyInput {
     fn current_timestamp() -> u64 {
         u64::from_be_bytes([7, 6, 5, 4, 3, 2, 1, 0])
     }
+    type CompLevel = i32;
+
+    fn compress<W:std::io::Write>(data: &[u8], writer: &mut W, comp_level: &Self::CompLevel) -> std::io::Result<usize> {
+        let mut encoder = zstd::Encoder::new(writer, *comp_level)?;
+        encoder.set_pledged_src_size(Some(data.len() as u64))?;
+        encoder.include_contentsize(true)?;
+        use std::io::Write;
+        let written = encoder.write(data)?;
+        encoder.finish()?;
+        Ok(written)
+    }
+
+    fn decompress<R:std::io::Read,W:std::io::Write>(compressed: &mut R, sink: &mut W,output_size:u32) -> std::io::Result<usize> {
+        let mut decoder = zstd::Decoder::new(compressed)?;
+        let mut buf = [0u8;1024];
+        let mut total = output_size as usize;
+        use std::io::Read;
+        loop {
+            if total == 0 {break}
+            let read = decoder.read(&mut buf[..1024.min(total)])?;
+            sink.write_all(&buf[..read])?;
+            total -= read;
+        }
+        Ok(total)
+    }
 }
 
 use std::io::Cursor;
@@ -51,10 +76,10 @@ pub fn generate_test_file() -> Cursor<Vec<u8>> {
     // Write 3 Content Components
     if log_pos {println!("CONTENT COMPONENT START: {}",cursor.position())};
     write_content_component(&mut cursor, false,None, None,B_CONTENT, &mut hasher).unwrap();
-    
+
     if log_pos {println!("CONTENT COMPONENT START: {}",cursor.position())};
     write_content_component(&mut cursor, true,None, None,B_CONTENT, &mut hasher).unwrap();
-    
+
     if log_pos {println!("CONTENT COMPONENT START: {}",cursor.position())};
     write_content_component(&mut cursor, false,None, None,B_CONTENT, &mut hasher).unwrap();
 
@@ -62,12 +87,12 @@ pub fn generate_test_file() -> Cursor<Vec<u8>> {
     let b_block_hash = hasher.finalize();
     let block_end_header = ComponentHeader::new_from_parts(HeaderTag::EndBlock as u8, DummyInput::current_timestamp().to_be_bytes(), None);
     write_block_end(&mut cursor, &block_end_header, &b_block_hash).unwrap();
-    
+
     if log_pos {println!("MN START: {}",cursor.position())};
     write_magic_number(&mut cursor).unwrap();
     if log_pos {println!("BLOCK START: {}",cursor.position())};
     write_atomic_block::<_,DummyInput>(&mut cursor, None, A_CONTENT, false, None,None).unwrap();
-    
+
     if log_pos {println!("MN START: {}",cursor.position())};
     write_magic_number(&mut cursor).unwrap();
     if log_pos {println!("BLOCK START: {}",cursor.position())};

@@ -7,7 +7,6 @@
 
 use reed_solomon::DecoderError;
 //use write::{WriteError, FILE_HEADER_LEN};
-pub use zstd;
 use crate::core::BlockInputs;
 pub mod core;
 pub mod read;

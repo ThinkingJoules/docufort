@@ -165,6 +165,8 @@ impl BlockState {
 
 /// A trait for hashing the block data.
 pub trait BlockInputs:Clone {
+    type CompLevel;
+
     fn new() -> Self;
     ///Add state to the hasher
     fn update(&mut self, data: &[u8]);
@@ -173,5 +175,13 @@ pub trait BlockInputs:Clone {
     ///Used to return the timestamp that all headers carry.
     ///This is stored as big endian in headers so direct byte comparison works.
     fn current_timestamp() -> u64;
+
+    /// Compress data to writer with the given compression level.
+    /// Returns the number of bytes written.
+    fn compress<W:std::io::Write>(data: &[u8], writer: &mut W, comp_level: &Self::CompLevel) -> std::io::Result<usize>;
+
+    /// Decompress data from reader.
+    /// Returns the number of bytes read from the reader.
+    fn decompress<R:std::io::Read,W:std::io::Write>(compressed: &mut R, sink: &mut W, output_size:u32) -> std::io::Result<usize>;
 }
 

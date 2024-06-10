@@ -70,7 +70,7 @@ Content within either block may skip ECC calculation if the extra storage and co
 ## Importance of ECC
 
 ECC is utilized as both a checksum and an integrity insurance for the Start/End and Content (header portion) blocks to aid recovery.
-The magic number requires its own ECC value, otherwise a single flipped bit could result in the loss of a whole block during recovery. 
+The magic number requires its own ECC value, otherwise a single flipped bit could result in the loss of a whole block during recovery.
 
 To enhance robustness, the ECC data for the DATA should be *prepended* to avoid misinterpretation of content (b'docufort') (with ECC data) as a block's start during recovery.
 
@@ -83,9 +83,8 @@ It is recommended to use a cryptographic hash.
 */
 
 
-use std::borrow::Cow;
+use std::{borrow::Cow, io::Seek};
 
-use zstd::{zstd_safe::CompressionLevel, bulk::compress_to_buffer};
 
 use crate::{core::{BlockInputs, ComponentHeader}, ECC_LEN, ecc::{calculate_ecc_chunk, calculate_ecc_for_chunks}, MN_ECC, MAGIC_NUMBER, HASH_LEN, HeaderTag, ReadWriteError, HashAdapter, HAS_ECC, IS_COMP};
 
@@ -97,7 +96,7 @@ use crate::{core::{BlockInputs, ComponentHeader}, ECC_LEN, ecc::{calculate_ecc_c
 pub fn init_file<W:std::io::Write>(file: &mut W) -> std::io::Result<()> {
     file.write_all(&MAGIC_NUMBER)?;
     file.write_all(&[b'V',b'1'])?;
-    file.write_all(&[ECC_LEN as u8])?;   
+    file.write_all(&[ECC_LEN as u8])?;
     Ok(())
 }
 
@@ -155,12 +154,21 @@ pub fn write_block_hash<W: std::io::Write>(writer: &mut W,hash:&[u8;HASH_LEN])->
 }
 
 ///Writes Header + Content Component, optionally computes ECC
-pub fn write_content_component<W: std::io::Write,B:BlockInputs>(writer: &mut W,calc_ecc:bool,compress:Option<CompressionLevel>,time_stamp: Option<u64>,content:&[u8],hasher:&mut B)->Result<(usize,bool),ReadWriteError>{
+pub fn write_content_component<W: std::io::Write+Seek,B:BlockInputs>(writer: &mut W,calc_ecc:bool,compress:Option<&B::CompLevel>,time_stamp: Option<u64>,content:&[u8],hasher:&mut B)->Result<(usize,bool),ReadWriteError>{
+    //TODO: figure out a more elegant way to do this to avoid allocating the vec.
+    //challenge: current helper fn's hash the data, so we can only call each fn once.
+    //for now we just allocate a vec of size data_len+4
+    //ideally we would just write it to the writer and add a Seek bound.
+    //Then if compression doesn't help, we simply seek back and write the uncompressed data.
+    //Either way, we would need to hash things in the right order, and this would mean we also need to add the Read bound.
+    //So we end up with lots of bounds to avoid an allocation.
+    //For now we just let this ride, as my first use cases don't use the compression routines here.
     let (content_to_write,is_compressed) = if let Some(cl) = compress {
         let data_len = content.len();
         let mut v = vec![0u8;data_len+4];//we need to allocate given the nature of needing to do ECC yet. TODO: Figure out how not to
-        match compress_to_buffer(content, &mut v[4..], cl) {
-            Ok(n) if n < data_len => {
+        let mut crsr = std::io::Cursor::new(&mut v[4..]);
+        match B::compress(content, &mut crsr, cl) {
+            Ok(n) if crsr.position() < data_len as u64 => {
                 v.truncate(n+4);
                 use std::io::Write;
                 (&mut v[0..4]).write_all(&(data_len as u32).to_be_bytes()).unwrap();
@@ -175,12 +183,13 @@ pub fn write_content_component<W: std::io::Write,B:BlockInputs>(writer: &mut W,c
 }
 
 ///Writes Header + Content Component, optionally computes ECC
-pub fn write_atomic_block<W: std::io::Write,B:BlockInputs>(writer: &mut W,start_time_stamp: Option<u64>,content:&[u8],calc_ecc:bool,compress:Option<CompressionLevel>,end_block:Option<&ComponentHeader>)->Result<(),ReadWriteError>{
+pub fn write_atomic_block<W: std::io::Write,B:BlockInputs>(writer: &mut W,start_time_stamp: Option<u64>,content:&[u8],calc_ecc:bool,compress:Option<&B::CompLevel>,end_block:Option<&ComponentHeader>)->Result<(),ReadWriteError>{
     let mut h = B::new();
     let (content,is_compressed) = if let Some(cl) = compress {
         let data_len = content.len();
         let mut v = vec![0u8;data_len+4];//we need to allocate given the nature of needing to do ECC yet. TODO: Figure out how not to
-        match compress_to_buffer(content, &mut v[4..], cl) {
+        let mut crsr = std::io::Cursor::new(&mut v[4..]);
+        match B::compress(content, &mut crsr, &cl) {
             Ok(n) if n < data_len => {
                 v.truncate(n+4);
                 use std::io::Write;
@@ -192,11 +201,11 @@ pub fn write_atomic_block<W: std::io::Write,B:BlockInputs>(writer: &mut W,start_
     }else{(Cow::Borrowed(content),false)};
     let mut tag = HeaderTag::StartABlock as u8;
     if calc_ecc {tag |= HAS_ECC}
-    if is_compressed {tag |= IS_COMP}    
+    if is_compressed {tag |= IS_COMP}
     let data = content.len() as u32;
     let time_stamp = start_time_stamp.unwrap_or_else(||B::current_timestamp()).to_be_bytes();
     let header = ComponentHeader::new_from_parts(tag as u8,time_stamp , Some(data));
-    write_header(writer, &header)?;   
+    write_header(writer, &header)?;
     write_content(writer, content.as_ref(), calc_ecc, &mut h)?;
     let hash = h.finalize();
     if let Some(header) = end_block {
@@ -238,6 +247,33 @@ mod test_super {
         fn current_timestamp() -> u64 {
             unimplemented!()
         }
+
+        type CompLevel = i32;
+
+        fn compress<W:std::io::Write>(data: &[u8], writer: &mut W, comp_level: &Self::CompLevel) -> std::io::Result<usize> {
+            let mut encoder = zstd::Encoder::new(writer, *comp_level)?;
+            encoder.set_pledged_src_size(Some(data.len() as u64))?;
+            encoder.include_contentsize(true)?;
+            use std::io::Write;
+            let written = encoder.write(data)?;
+            encoder.finish()?;
+            Ok(written)
+        }
+
+        fn decompress<R:std::io::Read,W:std::io::Write>(compressed: &mut R, sink: &mut W,output_size:u32) -> std::io::Result<usize> {
+            let mut decoder = zstd::Decoder::new(compressed)?;
+            let mut buf = [0u8;1024];
+            let mut total = output_size as usize;
+            use std::io::Read;
+            loop {
+                if total == 0 {break}
+                let read = decoder.read(&mut buf[..1024.min(total)])?;
+                sink.write_all(&buf[..read])?;
+                total -= read;
+            }
+            Ok(total)
+        }
+
     }
     #[test]
     fn test_write_magic_number() {
@@ -357,7 +393,7 @@ mod test_super {
         let content = [0u8;50];
         let end_block = ComponentHeader::new_from_parts(HeaderTag::EndBlock as u8, end_time_stamp, None);
         let start = ComponentHeader::new_from_parts(HeaderTag::StartBBlock as u8, start_time_stamp.to_be_bytes(), None);
-        
+
         let mut h = DummyHasher::new();
         write_header(&mut writer, &start).unwrap();
         write_content_component(&mut writer, true,None,Some(start_time_stamp),&content,&mut h).unwrap();
@@ -379,10 +415,10 @@ mod test_super {
         let data = [3u8;50];
         let end_block = ComponentHeader::new_from_parts(HeaderTag::EndBlock as u8, end_time_stamp, None);
         let start = ComponentHeader::new_from_parts(HeaderTag::StartBBlock as u8, start_time_stamp.to_be_bytes(), None);
-        
+
         let mut h = DummyHasher::new();
         write_header(&mut writer, &start).unwrap();
-        let (content_len,is_comp) = write_content_component(&mut writer, true,Some(22),Some(start_time_stamp),&data,&mut h).unwrap();
+        let (content_len,is_comp) = write_content_component(&mut writer, true,Some(&22),Some(start_time_stamp),&data,&mut h).unwrap();
         write_block_end(&mut writer,&end_block,&h.finalize()).unwrap();
 
         let inner = writer.into_inner();

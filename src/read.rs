@@ -7,8 +7,6 @@ Hence the Read + Write trait bounds for the RW generic that represents the docuf
 */
 
 
-use zstd::Decoder;
-
 use crate::{FILE_HEADER_LEN, MAGIC_NUMBER, ECC_LEN, core::{ComponentHeader, HeaderAsContent, BlockHash, BlockInputs, BlockEnd, Content}, ReadWriteError, HEADER_LEN, ecc::{apply_ecc, calc_ecc_data_len}, HASH_AND_ECC_LEN, DATA_SIZE, HeaderTag, HASH_LEN, ComponentTag, CorruptDataSegment, MN_ECC_LEN, MN_ECC};
 
 
@@ -179,8 +177,7 @@ pub fn read_content<W:std::io::Write,R:std::io::BufRead + std::io::Seek, B:Block
     let Content { data_len, data_start, compressed, .. } = *content_info;
     if let Some(decomp_len) = compressed{
         src.seek(std::io::SeekFrom::Start(data_start+4))?;
-        let mut dec = Decoder::with_buffer(src)?;
-        copy_n(&mut dec, sink, decomp_len as usize)?;
+        let _compressed_len = B::decompress(src,sink,decomp_len)?;
         Ok(decomp_len as usize)
     }else{
         src.seek(std::io::SeekFrom::Start(data_start))?;
