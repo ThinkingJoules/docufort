@@ -10,7 +10,7 @@ reed-solomon = "0.2.1"
 zstd = "0.12.4"
 
 [dev-dependencies]
-blake3 = "1.2.0"
+blake3 = "1.5.1"
 
 [features]
 ecc_len_2 = []
