@@ -86,7 +86,7 @@ It is recommended to use a cryptographic hash.
 use std::{borrow::Cow, io::Seek};
 
 
-use crate::{core::{BlockInputs, ComponentHeader}, ECC_LEN, ecc::{calculate_ecc_chunk, calculate_ecc_for_chunks}, MN_ECC, MAGIC_NUMBER, HASH_LEN, HeaderTag, ReadWriteError, HashAdapter, HAS_ECC, IS_COMP};
+use crate::{core::{BlockInputs, ComponentHeader}, ecc::{calculate_ecc_chunk, calculate_ecc_for_chunks}, HashAdapter, HeaderTag, ReadWriteError, ECC_LEN, HASH_LEN, HAS_ECC, IS_COMP, MAGIC_NUMBER, MN_ECC};
 
 
 /// Initializes a new DocuFort file at the specified path.
@@ -149,7 +149,7 @@ pub fn write_block_end<W: std::io::Write>(writer: &mut W,header:&ComponentHeader
 /// Writer represents the append only file, with the writer position at the end of the file.
 pub fn write_block_hash<W: std::io::Write>(writer: &mut W,hash:&[u8;HASH_LEN])->Result<(),ReadWriteError>{
     writer.write_all(hash)?;
-    calculate_ecc_chunk(&hash, writer)?;
+    calculate_ecc_chunk(&hash[..], writer)?;
     Ok(())
 }
 

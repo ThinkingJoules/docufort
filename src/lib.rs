@@ -17,6 +17,7 @@ pub mod integrity;
 pub mod retry_writer;
 pub mod content_reader;
 
+///Magic Number for the file format: "docufort"
 pub const MAGIC_NUMBER: [u8; 8] = [0x64, 0x6F, 0x63, 0x75, 0x66, 0x6F, 0x72, 0x74]; //b"docufort"
 pub const MN_ECC_LEN:usize = MAGIC_NUMBER.len() + ECC_LEN;
 
@@ -71,7 +72,9 @@ pub const B_BLOCK:u8 = 0b0010_0000;
 pub const CON_TAG:u8 = 0b0100_0000;
 /// First byte tag for the 'End Block' message.
 pub const END_TAG:u8 = 0b0110_0000;
+/// Bit flag indicating the presence of ECC data.
 pub const HAS_ECC:u8 = 0b0000_1000;
+/// Bit flag indicating the content is compressed.
 pub const IS_COMP:u8 = 0b0000_0100;
 
 

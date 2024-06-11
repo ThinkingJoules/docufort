@@ -1,3 +1,4 @@
+//! Core trait and structs for dealing with docufort format.
 use std::fmt::Debug;
 
 use crate::{*, ecc::calc_ecc_data_len, recovery::BlockReadSummary};
