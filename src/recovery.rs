@@ -1,6 +1,6 @@
 /*! This module contains functions for recovering the end of a docufort file.
 
-This is used at startup to determine a new end of the file after a crash or power loss.
+This is used at startup to determine a new end of the file and keep the semantics consistent per the block type.
 */
 
 use std::fs::OpenOptions;

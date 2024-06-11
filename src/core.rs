@@ -102,6 +102,8 @@ pub struct BlockEnd{
     pub header:ComponentHeader,
     pub hash: BlockHash
 }
+
+/// A struct representing the hash of a block.
 #[derive(Copy,Debug,Clone,PartialEq,Eq,PartialOrd,Ord)]
 pub struct BlockHash([u8;HASH_AND_ECC_LEN]);
 
@@ -114,18 +116,22 @@ impl BlockHash {
         arr[0..HASH_LEN].copy_from_slice(&hash);
         Self(arr)
     }
+    ///Just the hash portion of the hash + ecc
     pub fn hash(&self)->&[u8]{
         &self.0[0..HASH_LEN]
     }
+    ///The hash + ecc value
     pub fn as_slice(&self)->&[u8]{
         &self.0[..]
     }
+    ///The hash + ecc value
     pub fn as_mut_slice(&mut self)->&mut [u8]{
         &mut self.0[..]
     }
 }
 
-
+/// The integrity state of a block.
+/// See each variant for hints on how to use this enum.
 #[derive(Clone, Debug,  PartialEq, Eq)]
 pub enum BlockState{
     ///Block has Start..End components, but may have errors within.
@@ -164,8 +170,9 @@ impl BlockState {
     }
 }
 
-/// A trait for hashing the block data.
+/// A trait for implementers to choose a hash fn and compression algorithm.
 pub trait BlockInputs:Clone {
+    /// The compression level type used for the chosen compression algorithm.
     type CompLevel;
 
     fn new() -> Self;

@@ -8,7 +8,9 @@ use std::{io::{SeekFrom, Seek}, fs::OpenOptions};
 use crate::{core::{BlockState, BlockInputs, Block}, ReadWriteError, ComponentTag, read::{verify_configs, read_magic_number}, recovery::{try_read_block, BlockReadSummary}, CorruptDataSegment};
 
 
-
+/// The struct returned when we were able to recover the file.
+///
+/// Includes statistics on the file and the last block state.
 #[derive(Debug)]
 pub struct IntegrityCheckOk{
     pub last_block_state:Option<BlockState>,
@@ -60,6 +62,26 @@ impl From<ReadWriteError> for IntegrityErr{
         Self::Other(value)
     }
 }
+/// This function will read a docufort file and check the integrity of the file.
+/// It will attempt to correct any errors it finds in the data using any available ECC data.
+/// If it finds a corruption that it cannot correct, it will return an error.
+/// If it finds a block that is not closed, it will return Ok, and the file_len_checked will be the position of the last complete segment.
+/// # Arguments
+/// * `file_path` - The path to the docufort file.
+/// # Returns
+/// A Result containing the summary of the check.
+/// ## Ok
+/// Contains the summary of the check.
+///
+/// Note: May return Ok if content is corrupted beyond ECC repair (or no ECC enabled). Check the `corrupted_segments` for details.
+/// This is because we can still read past the corruption and find the next block, and recover other data.
+/// This is not fatal to docufort, but it is a problem for the user's data.
+/// ## Err
+/// - File is not a docufort file
+/// - File is not written with the same configuration as this compiled program (ECC_LEN or version mismatch)
+/// - A Block Component is corrupted beyond repair, preventing further reading of the file
+/// - The block structure is invalid
+/// - An IO error occurred
 pub fn integrity_check_file<B: BlockInputs>(file_path: &std::path::Path) -> Result<IntegrityCheckOk, IntegrityErr> {
     let mut file = OpenOptions::new().read(true).write(true).open(file_path)?;
     let mut file_len = file.metadata()?.len();

@@ -44,7 +44,7 @@ pub fn verify_configs<R:std::io::Read>(file: &mut R) -> std::io::Result<bool> {
     Ok(true)
 }
 
-//read opt ecc mn
+/// Attempts to read the magic number from the reader.
 pub fn read_magic_number<RW:std::io::Write + std::io::Read + std::io::Seek>(reader_writer:&mut RW,error_correct:bool)->Result<usize,ReadWriteError>{
     let mut buf = [0u8;MN_ECC_LEN];
     let start = reader_writer.seek(std::io::SeekFrom::Current(0))?;
@@ -59,7 +59,8 @@ pub fn read_magic_number<RW:std::io::Write + std::io::Read + std::io::Seek>(read
     Ok(errors)
 }
 
-/// Reader should be positioned at the start of a header.
+/// Attempts to read a header from the reader.
+///
 /// Returns Ok(errors_corrected, ComponentHeader)
 pub fn read_header<RW:std::io::Write + std::io::Read + std::io::Seek>(reader_writer:&mut RW,error_correct:bool)->Result<(usize,ComponentHeader),ReadWriteError>{
     let mut header = [0u8;HEADER_LEN+ECC_LEN];
@@ -75,7 +76,8 @@ pub fn read_header<RW:std::io::Write + std::io::Read + std::io::Seek>(reader_wri
     }else{0};
     Ok((errors,ComponentHeader::new(&header[0..HEADER_LEN],start)))
 }
-/// Reader should be positioned at the start of a header.
+/// Attempts to read a content header from the reader.
+///
 /// Returns Ok(errors_corrected, ComponentHeader)
 pub fn read_content_header<RW:std::io::Write + std::io::Read + std::io::Seek, B:BlockInputs>(reader_writer:&mut RW,error_correct:bool,hasher:&mut B)->Result<(usize,ComponentHeader),ReadWriteError>{
     let mut header = [0u8;HEADER_LEN+ECC_LEN];
@@ -93,7 +95,9 @@ pub fn read_content_header<RW:std::io::Write + std::io::Read + std::io::Seek, B:
     Ok((errors,ComponentHeader::new(&header[0..HEADER_LEN],start)))
 }
 
-///Reader should be positioned at the start of the hash (after the read of the end header).
+/// Attempts to read the hash from the reader.
+///
+/// Reader should be positioned at the start of the hash (after the read of the end header).
 /// Returns Ok(errors_corrected, BlockHash)
 pub fn read_hash<RW:  std::io::Write + std::io::Read + std::io::Seek>(reader_writer:&mut RW,error_correct:bool)->Result<(usize,BlockHash),ReadWriteError>{
     let mut hash = [0u8;HASH_AND_ECC_LEN];
@@ -110,6 +114,8 @@ pub fn read_hash<RW:  std::io::Write + std::io::Read + std::io::Seek>(reader_wri
     Ok((errors,BlockHash::new(hash)))
 }
 
+/// Reads a content segment from the reader.
+///
 /// This is used to during block verification.
 /// Reader should be position at the start of the content portion (ecc bytes if present, else the data bytes).
 pub fn check_read_content<RW:std::io::Write + std::io::Read + std::io::Seek, B:BlockInputs>(reader_writer:&mut RW,content_info:&HeaderAsContent,error_correct:bool,hasher:&mut B)->Result<(usize,Vec<CorruptDataSegment>,Content),ReadWriteError>{
@@ -173,6 +179,10 @@ pub fn check_read_content<RW:std::io::Write + std::io::Read + std::io::Seek, B:B
     Ok((tot_errors, corruption,content))
 }
 
+/// Reads the content from the reader and writes it to the sink.
+///
+/// Handles the decompression if the content is compressed.
+/// Returns the number of bytes written to the sink.
 pub fn read_content<W:std::io::Write,R:std::io::BufRead + std::io::Seek, B:BlockInputs>(src:&mut R,sink:&mut W,content_info:&Content)->Result<usize,ReadWriteError>{
     let Content { data_len, data_start, compressed, .. } = *content_info;
     if let Some(decomp_len) = compressed{
@@ -186,7 +196,7 @@ pub fn read_content<W:std::io::Write,R:std::io::BufRead + std::io::Seek, B:Block
     }
 }
 
-pub fn buffer_hash<R:std::io::Read, B:BlockInputs>(reader:&mut R,mut num_bytes:usize,hasher:&mut B)->std::io::Result<()>{
+fn buffer_hash<R:std::io::Read, B:BlockInputs>(reader:&mut R,mut num_bytes:usize,hasher:&mut B)->std::io::Result<()>{
     const BUF_LEN:usize = 4096;
     let mut buf = [0u8;BUF_LEN];
     while num_bytes > 0 {
@@ -201,6 +211,7 @@ pub fn buffer_hash<R:std::io::Read, B:BlockInputs>(reader:&mut R,mut num_bytes:u
     Ok(())
 }
 
+/// Used to assess the state of the content within a best effort block.
 #[derive(Debug)]
 pub enum BlockMiddleState{
     InvalidBlockStructure{last_good_component_end:u64},
@@ -210,7 +221,6 @@ pub enum BlockMiddleState{
 }
 
 /// This is a wrapper to just keep reading all the content.
-/// If hasher is Some, this will hash && !ecc, if none it will !hash && ecc.
 /// The reader should be positioned after reading a BBlockStart header
 pub fn read_block_middle<RW:std::io::Write + std::io::Read + std::io::Seek, B:BlockInputs>(reader_writer:&mut RW,error_correct_header:bool,error_correct_content:bool)->Result<BlockMiddleState,ReadWriteError>{
     let mut middle = Vec::new();

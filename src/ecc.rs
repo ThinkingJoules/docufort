@@ -1,4 +1,5 @@
 //! Error correction code (ECC) functions for encoding and decoding data.
+//! You shouldn't need to use any of these functions directly.
 use crate::DATA_SIZE;
 use crate::ECC_LEN;
 use reed_solomon::{Encoder,Decoder, DecoderError};
@@ -6,6 +7,7 @@ use reed_solomon::{Encoder,Decoder, DecoderError};
 
 
 
+#[inline(always)]
 pub fn ceiling_division(numerator: usize, denominator: usize) -> usize {
     if numerator % denominator == 0 {
         numerator / denominator
@@ -13,9 +15,14 @@ pub fn ceiling_division(numerator: usize, denominator: usize) -> usize {
         (numerator / denominator) + 1
     }
 }
+///Calculate the length of the ecc data for the given raw data length
+#[inline(always)]
 pub fn calc_ecc_data_len(raw_data_len:usize)->usize{
     ceiling_division(raw_data_len, DATA_SIZE)*ECC_LEN
 }
+///Write the ecc value (of ECC_LEN) to the writer for the given data.
+/// data must be less than or equal to DATA_SIZE
+#[inline]
 pub fn calculate_ecc_chunk<W: std::io::Write>(data: &[u8],writer:&mut W) -> std::io::Result<()> {
     //let bytes: &[u8] = data.as_ref();
     let encoder = Encoder::new(ECC_LEN);
@@ -53,16 +60,17 @@ pub fn calculate_ecc_for_chunks<W: std::io::Write>(data: &[u8], writer: &mut W) 
     Ok(())
 }
 
-
+#[inline]
 pub fn apply_ecc(ecc_data: &mut[u8]) -> Result<usize,DecoderError> {
     let decoder = Decoder::new(ECC_LEN);
     if decoder.is_corrupted(&ecc_data) {
         let (buffer,errors) = decoder.correct_err_count(&ecc_data,None)?;
-        {
-            let (data,ecc) = ecc_data.split_at_mut(buffer.data().len());
-            data.copy_from_slice(buffer.data());
-            ecc.copy_from_slice(buffer.ecc());
-        }
+        (&mut ecc_data[..]).copy_from_slice(&buffer[..]);
+        // {
+        //     let (data,ecc) = ecc_data.split_at_mut(buffer.data().len());
+        //     data.copy_from_slice(buffer.data());
+        //     ecc.copy_from_slice(buffer.ecc());
+        // }
         Ok(errors)
     }else{
         Ok(0)
@@ -110,11 +118,8 @@ pub fn apply_ecc_par(ecc_data: &[u8]) -> Result<Result<(),([u8;255],usize,usize)
         let (buffer,errors) = decoder.correct_err_count(&ecc_data,None)?;
         if errors > 0 {
             let mut ret = [0u8;255];
-            {
-                let (data,ecc) = ret.split_at_mut(buffer.data().len());
-                data.copy_from_slice(buffer.data());
-                ecc.copy_from_slice(buffer.ecc());
-            }
+            (&mut ret[..ecc_data.len()]).copy_from_slice(&buffer[..]);
+
             Ok(Err((ret,ecc_data.len(),errors)))
         }else{
             Ok(Ok(()))
@@ -172,6 +177,7 @@ pub fn apply_ecc_for_chunks(raw_data: &mut [u8]) -> Result<usize, DecoderError> 
     Ok(tot_errors)
 }
 
+#[inline(always)]
 pub fn calculate_msg_len(total_len: usize) -> usize {
     const C_SIZE:usize = DATA_SIZE + ECC_LEN;
     let num_complete_chunks = total_len / C_SIZE;

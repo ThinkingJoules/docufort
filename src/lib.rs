@@ -1,4 +1,38 @@
+/*!
+# Docufort
+This is an append only file format with built in error correction and recovery.
 
+This allows for recovery and consistency of partially written data (due to power loss, improper shutdown, etc).
+
+
+## Features
+- **ECC**: Error Correction Codes are used to correct errors in the data.
+- **Compression**: Data can be compressed before being written.
+- **Recovery**: If a block is corrupt, it can be recovered if the ECC data is intact.
+- **Integrity**: The file format has a hash of each block to ensure data integrity.
+
+The error correction is used as both a checksum and self-healing corruption protection in the header portions of the file, and is optional for content stored.
+The default allows for 2 errors every 251 bytes of data. Set the proper feature to change this.
+
+This library provides a trait that handles all the hashing, compression and decompression for the implementer, making it transparent for usage.
+
+## File Format
+The file format is roughly as follows:
+- **Magic Number**: 8 bytes, `docufort`
+- **Version**: 2 bytes, `V1`
+- **ECC Length**: 1 byte, the length of the ECC data used in the file.
+- **Block**[]: A block is a set of headers and content.
+    - **Header**: A header is a timestamp and a type byte.
+    - **Content**: The content of a block.
+    - **Hash**: A hash of the block.
+
+## Toolbox
+This library is more of a toolbox, and requires proper wrapping to be useful.
+The purpose of exposing everything is to allow others to implement their own strategies per the spec.
+This library is sort of a reference implementation for the spec.
+
+
+*/
 
 
 
