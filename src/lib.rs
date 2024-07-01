@@ -198,6 +198,24 @@ impl From<DecoderError> for ReadWriteError{
         Self::EccTooManyErrors
     }
 }
+impl std::fmt::Display for ReadWriteError {
+    fn fmt(&self, f: &mut std::fmt::Formatter) -> std::fmt::Result {
+        match self {
+            ReadWriteError::Io(err) => write!(f, "I/O error: {}", err),
+            ReadWriteError::EndOfFile => write!(f, "Unexpected end of file"),
+            ReadWriteError::EccTooManyErrors => write!(f, "Too many ECC errors"),
+        }
+    }
+}
+
+impl std::error::Error for ReadWriteError {
+    fn source(&self) -> Option<&(dyn std::error::Error + 'static)> {
+        match self {
+            ReadWriteError::Io(err) => Some(err),
+            _ => None,
+        }
+    }
+}
 
 pub struct HashAdapter<'a,RW,B:BlockInputs> {
     pub hasher:&'a mut B,

@@ -62,6 +62,25 @@ impl From<ReadWriteError> for IntegrityErr{
         Self::Other(value)
     }
 }
+impl std::fmt::Display for IntegrityErr {
+    fn fmt(&self, f: &mut std::fmt::Formatter) -> std::fmt::Result {
+        match self {
+            IntegrityErr::Other(err) => write!(f, "Other error: {}", err),
+            IntegrityErr::Corruption(pos, tag) => write!(f, "Corruption detected at position {} for component {:?}", pos, tag),
+            IntegrityErr::InvalidBlockStructure { start_of_bad_component } =>
+                write!(f, "Invalid block structure detected at position {}", start_of_bad_component),
+            IntegrityErr::FileConfigMisMatch => write!(f, "File configuration mismatch"),
+        }
+    }
+}
+impl std::error::Error for IntegrityErr {
+    fn source(&self) -> Option<&(dyn std::error::Error + 'static)> {
+        match self {
+            IntegrityErr::Other(err) => Some(err),
+            _ => None,
+        }
+    }
+}
 /// This function will read a docufort file and check the integrity of the file.
 /// It will attempt to correct any errors it finds in the data using any available ECC data.
 /// If it finds a corruption that it cannot correct, it will return an error.
