@@ -6,7 +6,7 @@ repository = "https://github.com/ThinkingJoules/docufort"
 description = "A toolbox for the docufort crash fault-tolerant append only file format."
 license = "MIT"
 keywords = ["append-only-file","crash-recovery","file"]
-categories = ["filesystems","data-structures","encoding"]
+categories = ["filesystem","data-structures","encoding"]
 
 [dependencies]
 reed-solomon = "0.2.1"
