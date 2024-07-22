@@ -268,6 +268,35 @@ pub enum CorruptDataSegment{
     ///If you can fix it, then you should *carefully* write the corrected bytes back at data_start..data_start+data_len.
     Corrupt{data_start:u64,data_len:u32}
 }
+
+pub trait FileLike:std::io::Read+std::io::Write+std::io::Seek {
+    /// Truncates the underlying data to the given length.
+    fn truncate(&mut self, len: u64)->std::io::Result<()>;
+    /// Returns the length of the underlying data.
+    fn len(&self)->std::io::Result<u64>;
+}
+
+impl FileLike for std::io::Cursor<Vec<u8>>{
+    fn truncate(&mut self, len: u64)->std::io::Result<()>{
+        let data = self.get_mut();
+        data.truncate(len as usize);
+        Ok(())
+    }
+
+    fn len(&self)->std::io::Result<u64> {
+        Ok(self.get_ref().len() as u64)
+    }
+}
+impl FileLike for std::fs::File{
+    fn truncate(&mut self, len: u64)->std::io::Result<()>{
+        self.set_len(len)
+    }
+
+    fn len(&self)->std::io::Result<u64> {
+        self.metadata().map(|m|m.len())
+    }
+}
+
 #[cfg(test)]
 mod test_super {
     use std::io::Cursor;

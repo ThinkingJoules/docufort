@@ -3,8 +3,7 @@
 This is used at startup to determine a new end of the file and keep the semantics consistent per the block type.
 */
 
-use std::fs::OpenOptions;
-use std::io::{SeekFrom, Seek};
+use std::io::SeekFrom;
 
 use crate::core::HeaderAsContent;
 use crate::read::{read_header, check_read_content, read_hash, read_block_middle, BlockMiddleState};
@@ -160,26 +159,25 @@ pub struct TailRecoverySummary{
 ///As long as the headers have corruption below the error correction ability, this will at most truncate the last block, if it is incomplete.
 ///If headers are corrupted, then it will keep truncating the end of the file until it can read a complete block.
 ///This does *not* truncate a block whose *contents* are corrupted beyond repair.
-pub fn recover_tail<B:BlockInputs>(file_path: &std::path::Path) -> Result<TailRecoverySummary, ReadWriteError> {
-    let mut file = OpenOptions::new().read(true).write(true).open(file_path)?;
-    let original_file_len = file.metadata()?.len();
+pub fn recover_tail<RW:FileLike, B:BlockInputs>(file: &mut RW) -> Result<TailRecoverySummary, ReadWriteError> {
+    let original_file_len = file.len()?;
     file.seek(SeekFrom::End(0))?;
     let mut file_ops = Vec::new();
     let mut tot_errors_corrected = 0;
     let mut error_correct_content = false;
     let mut other_start = None;
     loop {
-        let current_file_len = file.metadata()?.len();
+        let current_file_len = file.len()?;
         if let Some(offset) = other_start.take() {
             file.seek(SeekFrom::Start(offset))?;
         }
-        let block_start_offset = match find_block_start(&mut file) {
+        let block_start_offset = match find_block_start(file) {
             Ok(offset) if offset <= FILE_HEADER_LEN as u64 => return Ok(TailRecoverySummary { original_file_len, recovered_file_len: current_file_len, file_ops, has_blocks: false, tot_errors_corrected,corrupted_content_blocks:vec![] }),
             Err(e) => return Err(e.into()),
             Ok(offset) => offset,
         };
         file.seek(SeekFrom::Start(block_start_offset))?;
-        let bs = try_read_block::<_,B>(&mut file, true,error_correct_content)?;
+        let bs = try_read_block::<_,B>(file, true,error_correct_content)?;
         let crsr_pos = file.seek(SeekFrom::Current(0)).unwrap();
         file_ops.push((block_start_offset,bs));
         let (_,bs) = file_ops.last().unwrap();
@@ -195,7 +193,7 @@ pub fn recover_tail<B:BlockInputs>(file_path: &std::path::Path) -> Result<TailRe
                     if crsr_pos < current_file_len{
                         //we must truncate, as their is an incomplete MN+ECC chunk of bytes after
                         assert!(crsr_pos + MN_ECC_LEN as u64 > current_file_len,"{} !> {}",crsr_pos+MN_ECC_LEN as u64,current_file_len);
-                        file.set_len(crsr_pos)?;
+                        file.truncate(crsr_pos)?;
                     }else{
                         assert_eq!(crsr_pos,current_file_len);
                     }
@@ -216,34 +214,34 @@ pub fn recover_tail<B:BlockInputs>(file_path: &std::path::Path) -> Result<TailRe
                 //let truncation_amt = file.metadata()?.len() - truncate_at_then_close_block;
                 //how do we avoid allocating a really big vec? we would need to know when to start hashing, up to the truncate
                 //then we could just buffer update to get the hash to avoid a large allocation.
-                file.set_len(*truncate_at_then_close_block)?;
+                file.truncate(*truncate_at_then_close_block)?;
                 file.seek(SeekFrom::End(0))?;
                 let time_stamp = B::current_timestamp();
                 let header = ComponentHeader::new_from_parts(HeaderTag::EndBlock as u8, time_stamp.to_be_bytes(), None);
-                write_block_end(&mut file, &header, &hash_for_end)?;
+                write_block_end(file, &header, &hash_for_end)?;
                 continue; //should end in a closed block
             },
             BlockState::OpenABlock { truncate_at } => {
-                file.set_len(*truncate_at)?;
+                file.truncate(*truncate_at)?;
                 file.seek(SeekFrom::End(0))?;
                 error_correct_content = false;
                 continue; //should try the next block back
             },
             BlockState::InvalidBlockStructure { end_of_last_good_component, .. } => {
-                file.set_len(*end_of_last_good_component)?;
+                file.truncate(*end_of_last_good_component)?;
                 file.seek(SeekFrom::End(0))?;
                 error_correct_content = false;
                 continue; //If this is an A block, it will be OpenA next, if B Block, will try to close it next.
             },
             BlockState::DataCorruption { component_start,.. } => {
                 //This should really only occur on headers.
-                file.set_len(*component_start)?;
+                file.truncate(*component_start)?;
                 file.seek(SeekFrom::End(0))?;
                 error_correct_content = false;
                 continue; //If this is an A block, it will be OpenA next, if B Block, will try to close it next.
             },
             BlockState::IncompleteStartHeader { truncate_at } => {
-                file.set_len(*truncate_at)?;
+                file.truncate(*truncate_at)?;
                 file.seek(SeekFrom::End(0))?;
                 error_correct_content = false;
                 continue; //We don't know what we are, but we just try again after truncation.

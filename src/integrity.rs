@@ -3,9 +3,9 @@
 //! This will read the file from the beginning to the end, checking the integrity of the file.
 //! It will attempt to correct any errors it finds in the data using any available ECC data.
 
-use std::{io::{SeekFrom, Seek}, fs::OpenOptions};
+use std::io::SeekFrom;
 
-use crate::{core::{BlockState, BlockInputs, Block}, ReadWriteError, ComponentTag, read::{verify_configs, read_magic_number}, recovery::{try_read_block, BlockReadSummary}, CorruptDataSegment};
+use crate::{core::{Block, BlockInputs, BlockState}, read::{read_magic_number, verify_configs}, recovery::{try_read_block, BlockReadSummary}, ComponentTag, CorruptDataSegment, FileLike, ReadWriteError};
 
 
 /// The struct returned when we were able to recover the file.
@@ -101,9 +101,8 @@ impl std::error::Error for IntegrityErr {
 /// - A Block Component is corrupted beyond repair, preventing further reading of the file
 /// - The block structure is invalid
 /// - An IO error occurred
-pub fn integrity_check_file<B: BlockInputs>(file_path: &std::path::Path) -> Result<IntegrityCheckOk, IntegrityErr> {
-    let mut file = OpenOptions::new().read(true).write(true).open(file_path)?;
-    let mut file_len = file.metadata()?.len();
+pub fn integrity_check_file<RW:FileLike, B: BlockInputs>(file: &mut RW) -> Result<IntegrityCheckOk, IntegrityErr> {
+    let mut file_len = file.len()?;
     let mut errors_corrected = 0;
     let mut data_contents = 0;
     let mut data_size_on_disk = 0;
@@ -111,11 +110,11 @@ pub fn integrity_check_file<B: BlockInputs>(file_path: &std::path::Path) -> Resu
     let mut corrupted_segments = Vec::new();
     let mut block_times = Vec::new();
 
-    if !verify_configs(&mut file)?{return Err(IntegrityErr::FileConfigMisMatch)}
+    if !verify_configs(file)?{return Err(IntegrityErr::FileConfigMisMatch)}
     let mut last_state= None;
     loop {
         let cur_pos = file.seek(SeekFrom::Current(0))?;
-        let res = read_magic_number(&mut file, true);
+        let res = read_magic_number(file, true);
         let after_read_pos = file.seek(SeekFrom::Current(0))?;
         if cur_pos > file_len || after_read_pos > file_len || res.is_err() {//we read too far from when the fn was originally called.
             //We set the file_len to reflect how far we have integrity checked
@@ -123,7 +122,7 @@ pub fn integrity_check_file<B: BlockInputs>(file_path: &std::path::Path) -> Resu
             break;
         }
         errors_corrected += res?;
-        let bs = try_read_block::<_, B>(&mut file, true,true)?;//if we get an error now, there is some non-integrity problem
+        let bs = try_read_block::<_, B>(file, true,true)?;//if we get an error now, there is some non-integrity problem
         last_state = Some(bs);
         match last_state.as_ref().unwrap() {
             BlockState::Closed(BlockReadSummary { errors_corrected: e, block,  corrupted_content_blocks, block_start, block_start_timestamp, .. }) => {

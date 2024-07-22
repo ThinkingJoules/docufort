@@ -2,14 +2,14 @@
 //!
 //! If nothing else it demonstrates how to loop through documents and read content from a docufort file.
 
-use std::{io::{SeekFrom, Seek}, fs::OpenOptions, ops::RangeBounds};
+use std::{io::{Read, Seek, SeekFrom, Write}, ops::RangeBounds};
 
 use crate::{core::{BlockState, BlockInputs, Block, Content}, read::read_magic_number, recovery::{try_read_block, BlockReadSummary}, FILE_HEADER_LEN, MAGIC_NUMBER, ReadWriteError, ECC_LEN};
 
 /// This function will read a docufort file and return all the content written between two time stamps.
 ///
 /// # Arguments
-/// * `file_path` - The path to the docufort file.
+/// * `file` - Some sort of Read+Write+Seek object that represents the docufort file.
 /// * `start_hint` - Should be a BlockStart header position from which we want to start reading content.
 /// * `range` - The range of time stamps we want content from.
 ///
@@ -19,11 +19,10 @@ use crate::{core::{BlockState, BlockInputs, Block, Content}, read::read_magic_nu
 /// # Notes
 /// * The range will only return content *written* in the range of the given time stamp, not all items within a block that has a start time in this range.
 /// * This function assumes all header timestamps are monotonically increasing.
-/// * This does no ECC on anything.
+/// * This does no ECC at all (you should have integrity checked already).
 ///
 /// Recommended: Run integrity check on startup and provide a start_hint for the first block we want content from.
-pub fn find_content<B:BlockInputs,T:RangeBounds<u64>>(file_path: &std::path::Path, start_hint: Option<u64>,range:Option<T>) -> Result<Vec<(u64,Content)>, ReadWriteError> {
-    let mut file = OpenOptions::new().read(true).open(file_path)?;
+pub fn find_content<RW:Read+Write+Seek,B:BlockInputs,T:RangeBounds<u64>>(file: &mut RW, start_hint: Option<u64>,range:Option<T>) -> Result<Vec<(u64,Content)>, ReadWriteError> {
     let mut content = Vec::new();
     if let Some(s) = start_hint {
         file.seek(SeekFrom::Start(s))?;
@@ -52,7 +51,7 @@ pub fn find_content<B:BlockInputs,T:RangeBounds<u64>>(file_path: &std::path::Pat
     //we do no ECC
 
     'outer: loop {
-        let bs = try_read_block::<_, B>(&mut file, false,false)?;
+        let bs = try_read_block::<_, B>(file, false,false)?;
         match bs {
             BlockState::Closed(BlockReadSummary { block, .. }) => {
                 match block {
@@ -115,7 +114,7 @@ pub fn find_content<B:BlockInputs,T:RangeBounds<u64>>(file_path: &std::path::Pat
             }
             _ => break,
         }
-        let res = read_magic_number(&mut file, false);
+        let res = read_magic_number(file, false);
         if res.is_err(){break}
     }
     Ok(content)
