@@ -183,7 +183,7 @@ pub fn check_read_content<RW:std::io::Write + std::io::Read + std::io::Seek, B:B
 ///
 /// Handles the decompression if the content is compressed.
 /// Returns the number of bytes written to the sink.
-pub fn read_content<W:std::io::Write,R:std::io::BufRead + std::io::Seek, B:BlockInputs>(src:&mut R,sink:&mut W,content_info:&Content)->Result<usize,ReadWriteError>{
+pub fn read_content<W:std::io::Write, R:std::io::Read + std::io::Seek, B:BlockInputs>(src:&mut R,sink:&mut W,content_info:&Content)->Result<usize,ReadWriteError>{
     let Content { data_len, data_start, compressed, .. } = *content_info;
     if let Some(decomp_len) = compressed{
         src.seek(std::io::SeekFrom::Start(data_start+4))?;
