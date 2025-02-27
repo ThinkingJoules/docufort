@@ -50,6 +50,7 @@ pub mod recovery;
 pub mod integrity;
 pub mod retry_writer;
 pub mod content_reader;
+pub mod io_retry;
 
 ///Magic Number for the file format: "docufort"
 pub const MAGIC_NUMBER: [u8; 8] = [0x64, 0x6F, 0x63, 0x75, 0x66, 0x6F, 0x72, 0x74]; //b"docufort"

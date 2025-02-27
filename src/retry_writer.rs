@@ -1,4 +1,6 @@
 /*!
+MIGRATE TO THE io_retry module.
+
 This is a wrapper for trying to write IO repeatedly.
 
 I don't know how likely IO is to return error, when a second or third attempt may succeed.
