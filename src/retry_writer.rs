@@ -17,7 +17,7 @@ Or you could wrap it in a struct that stores the return values and a file handle
 
 use std::fmt::Debug;
 
-use crate::{core::{BlockInputs, ComponentHeader}, write::{write_magic_number, write_header, write_block_hash, write_atomic_block, write_content_component}, HeaderTag, ReadWriteError};
+use crate::{core::{BlockInputs, ComponentHeader}, write::{write_magic_number, write_header, write_block_hash, write_atomic_block, write_content_component}, HeaderTag};
 
 
 
@@ -97,7 +97,7 @@ pub fn perform_file_op<RWS, T, B>(
     tail: TailState<B>,
     oper: Operation<T,B::CompLevel>,
     mut write_attempts:usize
-) -> Result<TailState<B>,Vec<ReadWriteError>>//outer error is unrecoverable
+) -> Result<TailState<B>,Vec<std::io::Error>>//outer error is unrecoverable
 where
     RWS: std::io::Read + std::io::Write + std::io::Seek,
     T: AsRef<[u8]>+Debug,
@@ -189,7 +189,7 @@ where
 fn perform_inner_op<RWS, T, B>(
     file: &mut RWS,
     oper: InnerOperation<T,B>,
-) -> Result<Option<B>,(InnerOperation<T,B>,ReadWriteError)>
+) -> Result<Option<B>,(InnerOperation<T,B>,std::io::Error)>
 where
     RWS: std::io::Read + std::io::Write + std::io::Seek,
     T: AsRef<[u8]>+Debug,

@@ -86,7 +86,7 @@ It is recommended to use a cryptographic hash.
 use std::{borrow::Cow, io::Seek};
 
 
-use crate::{core::{BlockInputs, ComponentHeader}, ecc::{calculate_ecc_chunk, calculate_ecc_for_chunks}, HashAdapter, HeaderTag, ReadWriteError, ECC_LEN, HASH_LEN, HAS_ECC, IS_COMP, MAGIC_NUMBER, MN_ECC};
+use crate::{core::{BlockInputs, ComponentHeader}, ecc::{calculate_ecc_chunk, calculate_ecc_for_chunks}, HashAdapter, HeaderTag, ECC_LEN, HASH_LEN, HAS_ECC, IS_COMP, MAGIC_NUMBER, MN_ECC};
 
 
 /// Initializes a new DocuFort file at the specified path.
@@ -110,13 +110,13 @@ pub fn write_magic_number<W: std::io::Write>(writer: &mut W)->std::io::Result<()
 }
 
 ///Calculates ECC and Writes the header to the given writer.
-pub fn write_header<W: std::io::Write>(writer: &mut W,header:&ComponentHeader)->Result<(),ReadWriteError>{
+pub fn write_header<W: std::io::Write>(writer: &mut W,header:&ComponentHeader)->std::io::Result<()>{
     writer.write_all(header.as_slice())?;
     calculate_ecc_chunk(header.as_slice(), writer)?;
     Ok(())
 }
 ///Calculates ECC and Writes the header to the given writer.
-pub fn write_content_header<W: std::io::Write, B:BlockInputs>(writer: &mut W,data_len:u32,has_ecc:bool,is_compressed:bool,time_stamp: Option<u64>,hasher:&mut B)->Result<(),ReadWriteError>{
+pub fn write_content_header<W: std::io::Write, B:BlockInputs>(writer: &mut W,data_len:u32,has_ecc:bool,is_compressed:bool,time_stamp: Option<u64>,hasher:&mut B)->std::io::Result<()>{
     let mut tag = HeaderTag::CComponent as u8;
     if has_ecc {tag |= HAS_ECC}
     if is_compressed {tag |= IS_COMP}
@@ -130,7 +130,7 @@ pub fn write_content_header<W: std::io::Write, B:BlockInputs>(writer: &mut W,dat
 }
 
 ///Only use with Atomic Block. Does **NOT** write the header, Does **NOT** Compress.
-pub fn write_content<W: std::io::Write,B:BlockInputs>(writer: &mut W,content:&[u8],calc_ecc:bool,hasher:&mut B)->Result<(),ReadWriteError>{
+pub fn write_content<W: std::io::Write,B:BlockInputs>(writer: &mut W,content:&[u8],calc_ecc:bool,hasher:&mut B)->std::io::Result<()>{
     if calc_ecc {
         let mut hw = HashAdapter::new(writer, hasher);
         calculate_ecc_for_chunks(content, &mut hw)?;
@@ -140,21 +140,21 @@ pub fn write_content<W: std::io::Write,B:BlockInputs>(writer: &mut W,content:&[u
     Ok(())
 }
 /// Writer represents the append only file, with the writer position at the end of the file.
-pub fn write_block_end<W: std::io::Write>(writer: &mut W,header:&ComponentHeader,hash:&[u8;HASH_LEN])->Result<(),ReadWriteError>{
+pub fn write_block_end<W: std::io::Write>(writer: &mut W,header:&ComponentHeader,hash:&[u8;HASH_LEN])->std::io::Result<()>{
     write_header(writer, header)?;
     write_block_hash(writer, hash)?;
     Ok(())
 }
 
 /// Writer represents the append only file, with the writer position at the end of the file.
-pub fn write_block_hash<W: std::io::Write>(writer: &mut W,hash:&[u8;HASH_LEN])->Result<(),ReadWriteError>{
+pub fn write_block_hash<W: std::io::Write>(writer: &mut W,hash:&[u8;HASH_LEN])->std::io::Result<()>{
     writer.write_all(hash)?;
     calculate_ecc_chunk(&hash[..], writer)?;
     Ok(())
 }
 
 ///Writes Header + Content Component, optionally computes ECC
-pub fn write_content_component<W: std::io::Write+Seek,B:BlockInputs>(writer: &mut W,calc_ecc:bool,compress:Option<&B::CompLevel>,time_stamp: Option<u64>,content:&[u8],hasher:&mut B)->Result<(usize,bool),ReadWriteError>{
+pub fn write_content_component<W: std::io::Write+Seek,B:BlockInputs>(writer: &mut W,calc_ecc:bool,compress:Option<&B::CompLevel>,time_stamp: Option<u64>,content:&[u8],hasher:&mut B)->std::io::Result<(usize,bool)>{
     //TODO: figure out a more elegant way to do this to avoid allocating the vec.
     //challenge: current helper fn's hash the data, so we can only call each fn once.
     //for now we just allocate a vec of size data_len+4
@@ -183,7 +183,7 @@ pub fn write_content_component<W: std::io::Write+Seek,B:BlockInputs>(writer: &mu
 }
 
 ///Writes Header + Content Component, optionally computes ECC
-pub fn write_atomic_block<W: std::io::Write,B:BlockInputs>(writer: &mut W,start_time_stamp: Option<u64>,content:&[u8],calc_ecc:bool,compress:Option<&B::CompLevel>,end_block:Option<&ComponentHeader>)->Result<(),ReadWriteError>{
+pub fn write_atomic_block<W: std::io::Write,B:BlockInputs>(writer: &mut W,start_time_stamp: Option<u64>,content:&[u8],calc_ecc:bool,compress:Option<&B::CompLevel>,end_block:Option<&ComponentHeader>)->std::io::Result<()>{
     let mut h = B::new();
     let (content,is_compressed) = if let Some(cl) = compress {
         let data_len = content.len();
